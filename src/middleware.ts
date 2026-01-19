@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "./server/auth";
+import type { NextRequest } from "next/server";
 
 // Public routes that don't require authentication
 const publicRoutes = [
@@ -18,15 +18,18 @@ const publicRoutes = [
 // Auth routes - redirect to dashboard if already logged in
 const authRoutes = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
-export default auth((req) => {
-  const { nextUrl } = req;
-  const isLoggedIn = !!req.auth;
-  const pathname = nextUrl.pathname;
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
   // Allow all API routes to pass through (they handle their own auth)
   if (pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
+
+  // Check for session cookie (NextAuth.js session token)
+  const sessionToken = request.cookies.get("authjs.session-token")?.value
+    || request.cookies.get("__Secure-authjs.session-token")?.value;
+  const isLoggedIn = !!sessionToken;
 
   // Check if it's an auth route
   const isAuthRoute = authRoutes.some(
@@ -40,7 +43,7 @@ export default auth((req) => {
 
   // Redirect logged-in users away from auth routes
   if (isAuthRoute && isLoggedIn) {
-    return NextResponse.redirect(new URL("/dashboard", nextUrl));
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // Allow public routes
@@ -50,14 +53,14 @@ export default auth((req) => {
 
   // Redirect unauthenticated users to login
   if (!isLoggedIn) {
-    const callbackUrl = encodeURIComponent(pathname + nextUrl.search);
+    const callbackUrl = encodeURIComponent(pathname + request.nextUrl.search);
     return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${callbackUrl}`, nextUrl)
+      new URL(`/login?callbackUrl=${callbackUrl}`, request.url)
     );
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
@@ -66,7 +69,7 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
+     * - public folder assets
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
