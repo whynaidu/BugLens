@@ -1,0 +1,442 @@
+// prisma/schema.prisma
+// BugLens - Visual Bug Tracking Platform
+// Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  ADMIN
+  PROJECT_MANAGER
+  DEVELOPER
+  TESTER
+}
+
+enum BugStatus {
+  OPEN
+  IN_PROGRESS
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+  REOPENED
+  WONT_FIX
+}
+
+enum BugSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum BugPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AnnotationType {
+  RECTANGLE
+  CIRCLE
+  ARROW
+  FREEHAND
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  ASSIGNED
+  UNASSIGNED
+  COMMENTED
+  ATTACHMENT_ADDED
+  ANNOTATION_ADDED
+  ANNOTATION_UPDATED
+  ANNOTATION_DELETED
+  SYNCED_TO_EXTERNAL
+  EXTERNAL_SYNC
+  EXTERNAL_UNLINKED
+}
+
+enum IntegrationType {
+  JIRA
+  TRELLO
+  AZURE_DEVOPS
+  SLACK
+  TEAMS
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SLACK
+  TEAMS
+}
+
+// ============================================
+// AUTHENTICATION MODELS (NextAuth)
+// ============================================
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  avatarUrl      String?
+  emailVerified  DateTime?
+  hashedPassword String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  memberships       Member[]
+  createdBugs       Bug[]                    @relation("BugCreator")
+  assignedBugs      Bug[]                    @relation("BugAssignee")
+  comments          Comment[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  notificationPrefs NotificationPreference[]
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// ORGANIZATION & MEMBERSHIP
+// ============================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members      Member[]
+  projects     Project[]
+  integrations Integration[]
+  invitations  Invitation[]
+
+  @@index([slug])
+}
+
+model Member {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role     @default(TESTER)
+  joinedAt       DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  organizationId String
+  role           Role     @default(TESTER)
+  token          String   @unique
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([email, organizationId])
+  @@index([token])
+}
+
+// ============================================
+// PROJECT HIERARCHY
+// ============================================
+
+model Project {
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  description      String?
+  slug             String
+  color            String   @default("#6366f1")
+  isArchived       Boolean  @default(false)
+  externalMappings Json     @default("{}") // Jira/Trello/Azure mapping
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  flows        Flow[]
+  bugs         Bug[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model Flow {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  screenshots Screenshot[]
+
+  @@index([projectId])
+}
+
+model Screenshot {
+  id           String   @id @default(cuid())
+  flowId       String
+  title        String?
+  description  String?
+  originalUrl  String
+  thumbnailUrl String?
+  previewUrl   String?
+  s3Key        String
+  width        Int?
+  height       Int?
+  fileSize     Int?
+  mimeType     String?
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  flow        Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  annotations Annotation[]
+
+  @@index([flowId])
+}
+
+// ============================================
+// ANNOTATIONS & BUGS
+// ============================================
+
+model Annotation {
+  id           String         @id @default(cuid())
+  screenshotId String
+  bugId        String?
+  type         AnnotationType
+  x            Float // Normalized 0-1
+  y            Float // Normalized 0-1
+  width        Float? // For rectangle
+  height       Float? // For rectangle
+  radius       Float? // For circle
+  points       Json? // For arrow: [startX, startY, endX, endY]
+  stroke       String         @default("#EF4444")
+  strokeWidth  Float          @default(2)
+  fill         String?
+  order        Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  screenshot Screenshot @relation(fields: [screenshotId], references: [id], onDelete: Cascade)
+  bug        Bug?       @relation(fields: [bugId], references: [id], onDelete: SetNull)
+
+  @@index([screenshotId])
+  @@index([bugId])
+}
+
+model Bug {
+  id           String           @id @default(cuid())
+  projectId    String
+  creatorId    String
+  assigneeId   String?
+  title        String
+  description  String           @db.Text
+  status       BugStatus        @default(OPEN)
+  severity     BugSeverity      @default(MEDIUM)
+  priority     BugPriority      @default(MEDIUM)
+  browserInfo  Json? // { name, version, os }
+  screenSize   Json? // { width, height }
+  url          String? // URL where bug was found
+  externalId   String? // ID in Jira/Trello/Azure DevOps (deprecated, use externalIds)
+  externalUrl  String? // URL to external issue (deprecated, use externalIds)
+  externalType IntegrationType? // (deprecated, use externalIds)
+  externalIds  Json? // { jira?: string, trello?: string, azureDevOps?: string }
+  lastSyncedAt DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User         @relation("BugCreator", fields: [creatorId], references: [id])
+  assignee    User?        @relation("BugAssignee", fields: [assigneeId], references: [id])
+  annotations Annotation[]
+  comments    Comment[]
+  auditLogs   AuditLog[]
+  attachments Attachment[]
+
+  @@index([projectId])
+  @@index([creatorId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([externalId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  bugId     String
+  authorId  String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bug    Bug  @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([bugId])
+  @@index([authorId])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  bugId     String
+  fileName  String
+  fileUrl   String
+  s3Key     String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  bug Bug @relation(fields: [bugId], references: [id], onDelete: Cascade)
+
+  @@index([bugId])
+}
+
+// ============================================
+// AUDIT LOGGING
+// ============================================
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  bugId     String
+  userId    String
+  action    AuditAction
+  details   Json        @default("{}") // Old/new values
+  createdAt DateTime    @default(now())
+
+  bug  Bug  @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([bugId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// INTEGRATIONS
+// ============================================
+
+model Integration {
+  id             String          @id @default(cuid())
+  organizationId String
+  type           IntegrationType
+  accessToken    String?         @db.Text // Encrypted
+  refreshToken   String?         @db.Text // Encrypted
+  tokenExpiresAt DateTime?
+  config         Json            @default("{}") // Workspace/project mapping
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  type      String // bug_assigned, bug_commented, status_changed
+  title     String
+  message   String
+  data      Json                @default("{}") // { bugId, projectId, etc. }
+  channel   NotificationChannel @default(IN_APP)
+  isRead    Boolean             @default(false)
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id             String              @id @default(cuid())
+  userId         String
+  organizationId String?
+  eventType      String // bug_assigned, bug_commented, etc.
+  channel        NotificationChannel
+  isEnabled      Boolean             @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId, eventType, channel])
+  @@index([userId])
+}
