@@ -4,12 +4,25 @@ import { auth } from "@/server/auth";
 import { db } from "@/server/db";
 import { getUserColor } from "@/lib/liveblocks";
 
-// Initialize Liveblocks Node client
-const liveblocks = new Liveblocks({
-  secret: process.env.LIVEBLOCKS_SECRET_KEY!,
-});
+// Lazy initialize Liveblocks client only when needed
+function getLiveblocks(): Liveblocks | null {
+  const secret = process.env.LIVEBLOCKS_SECRET_KEY;
+  if (!secret || !secret.startsWith("sk_")) {
+    return null;
+  }
+  return new Liveblocks({ secret });
+}
 
 export async function POST(request: NextRequest) {
+  // Check if Liveblocks is configured
+  const liveblocks = getLiveblocks();
+  if (!liveblocks) {
+    return NextResponse.json(
+      { error: "Liveblocks is not configured. Real-time collaboration is disabled." },
+      { status: 503 }
+    );
+  }
+
   // Get the current user's session
   const session = await auth();
 
