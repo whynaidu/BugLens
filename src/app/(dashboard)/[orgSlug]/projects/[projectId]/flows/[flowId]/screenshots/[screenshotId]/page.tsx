@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { ArrowLeft, X, Bug, Loader2 } from "lucide-react";
+import { ArrowLeft, X, Bug, Loader2, Plus, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 import { trpc } from "@/lib/trpc";
@@ -12,6 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CreateBugDialog } from "@/components/screenshots/create-bug-dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { Annotation } from "@/store/annotation-store";
 import type { NormalizedAnnotation } from "@/components/screenshots/screenshot-viewer";
 
@@ -53,6 +60,10 @@ export default function ScreenshotViewerPage() {
   // Dialog state for creating bug from annotation
   const [isBugDialogOpen, setIsBugDialogOpen] = useState(false);
   const [selectedAnnotationForBug, setSelectedAnnotationForBug] = useState<Annotation | null>(null);
+
+  // Track highlighted bug in sidebar
+  const [highlightedBugId, setHighlightedBugId] = useState<string | null>(null);
+  const bugRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Batch update annotations mutation (to save annotations to DB)
   const batchUpdateAnnotationsMutation = trpc.annotations.batchUpdate.useMutation();
@@ -97,8 +108,37 @@ export default function ScreenshotViewerPage() {
     }
   }, [hasNext, allScreenshots, currentIndex, router, orgSlug, projectId, flowId]);
 
-  // Handle annotation click to open bug creation dialog
+  // Clear highlight after delay
+  useEffect(() => {
+    if (highlightedBugId) {
+      const timer = setTimeout(() => {
+        setHighlightedBugId(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedBugId]);
+
+  // Handle annotation click - either highlight existing bug or open create dialog
   const handleAnnotationSelect = useCallback((annotation: Annotation) => {
+    // Check if this annotation has a linked bug
+    if (annotation.bugId) {
+      // Highlight the bug in sidebar and scroll to it
+      setHighlightedBugId(annotation.bugId);
+
+      // Scroll to the bug card
+      const bugElement = bugRefs.current.get(annotation.bugId);
+      if (bugElement) {
+        bugElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    } else {
+      // No bug linked - open create bug dialog
+      setSelectedAnnotationForBug(annotation);
+      setIsBugDialogOpen(true);
+    }
+  }, []);
+
+  // Handle creating a new bug for an annotation (even if it already has one)
+  const handleCreateNewBug = useCallback((annotation: Annotation) => {
     setSelectedAnnotationForBug(annotation);
     setIsBugDialogOpen(true);
   }, []);
@@ -144,6 +184,11 @@ export default function ScreenshotViewerPage() {
       bugId: a.bugId || undefined,
     }));
   }, [screenshot]);
+
+  // Get annotation for a specific bug
+  const getAnnotationForBug = useCallback((bugId: string) => {
+    return annotations.find((a) => a.bugId === bugId);
+  }, [annotations]);
 
   // Save annotation to database when drawing finishes
   const handleAnnotationCreate = useCallback(
@@ -257,8 +302,10 @@ export default function ScreenshotViewerPage() {
   }
 
   const linkedBugs = screenshot.annotations
-    ?.map((a) => a.bug)
-    .filter((bug): bug is NonNullable<typeof bug> => bug !== null);
+    ?.map((a) => (a.bug ? { ...a.bug, annotationId: a.id } : null))
+    .filter((item): item is NonNullable<typeof item> =>
+      item !== null
+    );
 
   return (
     <div className="fixed inset-0 z-50 bg-background flex">
@@ -321,28 +368,69 @@ export default function ScreenshotViewerPage() {
           <div className="p-4 space-y-2">
             {linkedBugs && linkedBugs.length > 0 ? (
               linkedBugs.map((bug) => (
-                <Link
-                  key={bug.id}
-                  href={`/${orgSlug}/projects/${projectId}/bugs/${bug.id}`}
-                  className="block p-3 rounded-lg border bg-background hover:bg-muted/50 transition-colors"
-                >
-                  <p className="font-medium text-sm truncate">{bug.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge variant="outline" className="text-xs">
-                      {bug.status}
-                    </Badge>
-                    <Badge
-                      variant={
-                        bug.severity === "CRITICAL" || bug.severity === "HIGH"
-                          ? "destructive"
-                          : "secondary"
-                      }
-                      className="text-xs"
+                <ContextMenu key={bug.id}>
+                  <ContextMenuTrigger>
+                    <div
+                      ref={(el) => {
+                        if (el) bugRefs.current.set(bug.id, el);
+                      }}
+                      className={`block p-3 rounded-lg border bg-background transition-all cursor-pointer ${
+                        highlightedBugId === bug.id
+                          ? "ring-2 ring-primary border-primary bg-primary/5"
+                          : "hover:bg-muted/50"
+                      }`}
+                      onClick={() => {
+                        // Find the annotation for this bug and highlight it
+                        const annotation = getAnnotationForBug(bug.id);
+                        if (annotation) {
+                          // Could trigger annotation highlight on canvas here
+                        }
+                      }}
                     >
-                      {bug.severity}
-                    </Badge>
-                  </div>
-                </Link>
+                      <p className="font-medium text-sm truncate">{bug.title}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {bug.status}
+                        </Badge>
+                        <Badge
+                          variant={
+                            bug.severity === "CRITICAL" || bug.severity === "HIGH"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                          className="text-xs"
+                        >
+                          {bug.severity}
+                        </Badge>
+                      </div>
+                      {highlightedBugId === bug.id && (
+                        <p className="text-xs text-primary mt-2 font-medium">
+                          Click annotation to view this bug
+                        </p>
+                      )}
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem asChild>
+                      <Link href={`/${orgSlug}/projects/${projectId}/bugs/${bug.id}`}>
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        View Bug Details
+                      </Link>
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onClick={() => {
+                        const annotation = getAnnotationForBug(bug.id);
+                        if (annotation) {
+                          handleCreateNewBug(annotation);
+                        }
+                      }}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Another Bug
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))
             ) : (
               <div className="text-center py-8">
@@ -351,19 +439,35 @@ export default function ScreenshotViewerPage() {
                   No bugs linked yet
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Draw an annotation and link it to a bug
+                  Click an annotation to create a bug
                 </p>
               </div>
             )}
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t">
-          <Button className="w-full" variant="outline">
-            <Bug className="mr-2 h-4 w-4" />
-            Create Bug from Selection
-          </Button>
-        </div>
+        {/* Annotations without bugs section */}
+        {annotations.filter(a => !a.bugId).length > 0 && (
+          <div className="p-4 border-t">
+            <p className="text-xs text-muted-foreground mb-2">
+              {annotations.filter(a => !a.bugId).length} annotation(s) without bugs
+            </p>
+            <Button
+              className="w-full"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const unlinkedAnnotation = annotations.find(a => !a.bugId);
+                if (unlinkedAnnotation) {
+                  handleCreateNewBug(unlinkedAnnotation);
+                }
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create Bug for Annotation
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Bug creation dialog */}
