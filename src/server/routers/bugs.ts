@@ -137,6 +137,10 @@ export const bugsRouter = createTRPCRouter({
             browserInfo: browserInfo ?? undefined,
             screenSize: screenSize ?? undefined,
             url,
+            // Connect to annotation if provided (many-to-many relationship)
+            annotations: annotationId
+              ? { connect: { id: annotationId } }
+              : undefined,
           },
           include: {
             creator: {
@@ -147,14 +151,6 @@ export const bugsRouter = createTRPCRouter({
             },
           },
         });
-
-        // Link annotation to bug if provided
-        if (annotationId) {
-          await tx.annotation.update({
-            where: { id: annotationId },
-            data: { bugId: createdBug.id },
-          });
-        }
 
         // Create audit log
         await tx.auditLog.create({

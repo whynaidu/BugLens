@@ -14,6 +14,7 @@ export function fromPrismaAnnotationType(type: string): "rectangle" | "circle" |
 }
 
 // Base annotation schema for shared fields
+// Note: Bug links are managed via many-to-many relationship (bugs.create connects to annotation)
 const annotationBaseSchema = z.object({
   type: annotationTypeSchema,
   x: z.number().min(0).max(1), // Normalized 0-1
@@ -21,7 +22,6 @@ const annotationBaseSchema = z.object({
   stroke: z.string().regex(/^#[0-9A-Fa-f]{6}$/, { message: "Invalid hex color" }).default("#EF4444"),
   strokeWidth: z.number().min(1).max(10).default(2),
   fill: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
-  bugId: z.string().cuid().optional().nullable(),
 });
 
 // Rectangle annotation
@@ -66,6 +66,7 @@ export const createAnnotationSchema = z.object({
 });
 
 // Update annotation input
+// Note: Bug links are managed via many-to-many relationship
 export const updateAnnotationSchema = z.object({
   id: z.string().cuid(),
   x: z.number().min(0).max(1).optional(),
@@ -77,10 +78,10 @@ export const updateAnnotationSchema = z.object({
   stroke: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   strokeWidth: z.number().min(1).max(10).optional(),
   fill: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
-  bugId: z.string().cuid().optional().nullable(),
 });
 
 // Batch update annotations for a screenshot
+// Note: Bug links are managed via many-to-many relationship
 export const batchUpdateAnnotationsSchema = z.object({
   screenshotId: z.string().cuid(),
   annotations: z.array(
@@ -96,7 +97,6 @@ export const batchUpdateAnnotationsSchema = z.object({
       stroke: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#EF4444"),
       strokeWidth: z.number().min(1).max(10).default(2),
       fill: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().nullable(),
-      bugId: z.string().cuid().optional().nullable(),
     })
   ),
 });

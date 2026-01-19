@@ -2,6 +2,13 @@ import { create } from "zustand";
 
 export type AnnotationTool = "select" | "rectangle" | "circle" | "arrow" | "freehand";
 
+export interface LinkedBug {
+  id: string;
+  title: string;
+  status: string;
+  severity: string;
+}
+
 export interface Annotation {
   id: string;
   type: "rectangle" | "circle" | "arrow" | "freehand";
@@ -12,7 +19,7 @@ export interface Annotation {
   points?: number[];
   stroke: string;
   strokeWidth: number;
-  bugId?: string;
+  bugs?: LinkedBug[];  // Many-to-many: an annotation can have multiple bugs
 }
 
 interface AnnotationState {

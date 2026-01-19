@@ -77,7 +77,7 @@ export function useAnnotation({
   // Initialize store with fetched annotations
   useEffect(() => {
     if (fetchedAnnotations) {
-      // Convert to store format
+      // Convert to store format (using bugs array from many-to-many relationship)
       const storeAnnotations = fetchedAnnotations.map((a): StoreAnnotation => ({
         id: a.id,
         type: a.type as StoreAnnotation["type"],
@@ -88,7 +88,7 @@ export function useAnnotation({
         points: a.points ?? undefined,
         stroke: a.stroke,
         strokeWidth: a.strokeWidth,
-        bugId: a.bugId ?? undefined,
+        bugs: a.bugs || [],
       }));
       setAnnotations(storeAnnotations);
       lastSavedRef.current = JSON.stringify(fetchedAnnotations);
@@ -102,6 +102,7 @@ export function useAnnotation({
     }
 
     // Convert store annotations to API format
+    // Note: Bug links are managed via many-to-many, not included in batch update
     const apiAnnotations = annotations.map((a) => ({
       id: a.id,
       type: a.type,
@@ -112,7 +113,6 @@ export function useAnnotation({
       points: a.points,
       stroke: a.stroke,
       strokeWidth: a.strokeWidth,
-      bugId: a.bugId,
     }));
 
     await batchUpdateMutation.mutateAsync({
@@ -126,6 +126,7 @@ export function useAnnotation({
     if (!autoSave) return;
 
     // Check if annotations have changed from last saved state
+    // Note: Exclude bugs from comparison as they're managed separately
     const currentState = JSON.stringify(
       annotations.map((a) => ({
         id: a.id,
@@ -137,7 +138,6 @@ export function useAnnotation({
         points: a.points,
         stroke: a.stroke,
         strokeWidth: a.strokeWidth,
-        bugId: a.bugId,
       }))
     );
 
@@ -175,7 +175,7 @@ export function useAnnotation({
         points: a.points ?? undefined,
         stroke: a.stroke,
         strokeWidth: a.strokeWidth,
-        bugId: a.bugId ?? undefined,
+        bugs: a.bugs || [],
       }));
       setAnnotations(storeAnnotations);
     }

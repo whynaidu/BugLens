@@ -46,6 +46,8 @@ const KonvaCanvas = dynamic(
 );
 
 // Normalized annotation type for database storage (coordinates 0-1)
+// NormalizedAnnotation is for drawing/storage - doesn't include bug links
+// Bug links are managed via many-to-many relationship separately
 export interface NormalizedAnnotation {
   id?: string;
   type: "rectangle" | "circle" | "arrow" | "freehand";
@@ -56,7 +58,6 @@ export interface NormalizedAnnotation {
   points?: number[];
   stroke: string;
   strokeWidth: number;
-  bugId?: string;
 }
 
 interface ScreenshotViewerProps {
@@ -162,20 +163,29 @@ export function ScreenshotViewer({
     return denormalized;
   }, []);
 
-  // Set initial annotations when image loads (need dimensions for denormalization)
-  const initializedRef = useRef(false);
+  // Track which annotation IDs we've synced to detect changes
+  const lastSyncedIdsRef = useRef<string>("");
+
+  // Sync annotations from props to store when they change
   useEffect(() => {
-    if (!initializedRef.current && imageSize.width > 0 && imageSize.height > 0 && initialAnnotations.length > 0) {
-      initializedRef.current = true;
-      // Denormalize initial annotations from 0-1 to screen coordinates
-      const scale = Math.min(containerSize.width / imageSize.width, containerSize.height / imageSize.height, 1) * zoom;
-      const denormalized = initialAnnotations.map((a) =>
-        denormalizeAnnotation(a, imageSize.width, imageSize.height, scale, panX, panY)
-      );
-      setAnnotations(denormalized);
+    if (imageSize.width > 0 && imageSize.height > 0) {
+      // Create a key from annotation IDs to detect changes
+      const currentIds = initialAnnotations.map(a => a.id).sort().join(",");
+
+      // Only re-sync if the annotations have changed (different IDs)
+      if (currentIds !== lastSyncedIdsRef.current) {
+        lastSyncedIdsRef.current = currentIds;
+
+        // Denormalize initial annotations from 0-1 to screen coordinates
+        const scale = Math.min(containerSize.width / imageSize.width, containerSize.height / imageSize.height, 1) * zoom;
+        const denormalized = initialAnnotations.map((a) =>
+          denormalizeAnnotation(a, imageSize.width, imageSize.height, scale, panX, panY)
+        );
+        setAnnotations(denormalized);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageSize.width, imageSize.height, initialAnnotations.length]); // Run when image loads
+  }, [imageSize.width, imageSize.height, initialAnnotations]); // Re-run when annotations change
 
   // Handle container resize
   useEffect(() => {
@@ -369,7 +379,7 @@ export function ScreenshotViewer({
       y: normY,
       stroke: annotation.stroke,
       strokeWidth: annotation.strokeWidth,
-      bugId: annotation.bugId,
+      // Note: Bug links are managed via many-to-many, not included here
     };
 
     // Normalize width/height for rectangles and circles

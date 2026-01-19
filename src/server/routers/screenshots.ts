@@ -321,11 +321,11 @@ export const screenshotsRouter = createTRPCRouter({
         ctx.session.user.id
       );
 
-      // Get annotations with bug info
+      // Get annotations with bugs info (many-to-many relationship)
       const annotations = await ctx.db.annotation.findMany({
         where: { screenshotId },
         include: {
-          bug: {
+          bugs: {
             select: {
               id: true,
               title: true,

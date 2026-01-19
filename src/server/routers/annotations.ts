@@ -109,7 +109,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { screenshotId },
         orderBy: { order: "asc" },
         include: {
-          bug: {
+          bugs: {
             select: {
               id: true,
               title: true,
@@ -192,7 +192,7 @@ export const annotationsRouter = createTRPCRouter({
               stroke: annotation.stroke,
               strokeWidth: annotation.strokeWidth,
               fill: annotation.fill,
-              bugId: annotation.bugId,
+              // Note: Bug links are managed via the bugs.create mutation (many-to-many)
             },
           });
         }
@@ -221,7 +221,7 @@ export const annotationsRouter = createTRPCRouter({
                 stroke: annotation.stroke,
                 strokeWidth: annotation.strokeWidth,
                 fill: annotation.fill,
-                bugId: annotation.bugId,
+                // Note: Bug links are managed via the bugs.create mutation (many-to-many)
                 order: nextOrder++,
               },
             });
@@ -234,7 +234,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { screenshotId },
         orderBy: { order: "asc" },
         include: {
-          bug: {
+          bugs: {
             select: {
               id: true,
               title: true,
@@ -267,7 +267,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { id },
         data: updates,
         include: {
-          bug: {
+          bugs: {
             select: {
               id: true,
               title: true,
@@ -304,7 +304,7 @@ export const annotationsRouter = createTRPCRouter({
     }),
 
   /**
-   * Link or unlink an annotation to a bug
+   * Link an annotation to a bug (many-to-many - adds to existing links)
    */
   linkToBug: protectedProcedure
     .input(linkAnnotationToBugSchema)
@@ -348,13 +348,91 @@ export const annotationsRouter = createTRPCRouter({
             message: "Bug must belong to the same organization",
           });
         }
+
+        // Connect the bug to the annotation (many-to-many)
+        const updatedAnnotation = await ctx.db.annotation.update({
+          where: { id: annotationId },
+          data: {
+            bugs: {
+              connect: { id: bugId },
+            },
+          },
+          include: {
+            bugs: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                severity: true,
+              },
+            },
+          },
+        });
+
+        return {
+          ...updatedAnnotation,
+          type: fromPrismaAnnotationType(updatedAnnotation.type),
+          points: updatedAnnotation.points as number[] | null,
+        };
       }
 
+      // If no bugId provided, just return the annotation as is
+      const currentAnnotation = await ctx.db.annotation.findUnique({
+        where: { id: annotationId },
+        include: {
+          bugs: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              severity: true,
+            },
+          },
+        },
+      });
+
+      if (!currentAnnotation) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Annotation not found",
+        });
+      }
+
+      return {
+        ...currentAnnotation,
+        type: fromPrismaAnnotationType(currentAnnotation.type),
+        points: currentAnnotation.points as number[] | null,
+      };
+    }),
+
+  /**
+   * Unlink an annotation from a bug
+   */
+  unlinkFromBug: protectedProcedure
+    .input(linkAnnotationToBugSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { annotationId, bugId } = input;
+
+      // Verify access to annotation
+      await verifyAnnotationAccess(ctx.db, annotationId, ctx.session.user.id);
+
+      if (!bugId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Bug ID is required for unlinking",
+        });
+      }
+
+      // Disconnect the bug from the annotation
       const updatedAnnotation = await ctx.db.annotation.update({
         where: { id: annotationId },
-        data: { bugId },
+        data: {
+          bugs: {
+            disconnect: { id: bugId },
+          },
+        },
         include: {
-          bug: {
+          bugs: {
             select: {
               id: true,
               title: true,

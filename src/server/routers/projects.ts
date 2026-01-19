@@ -173,7 +173,7 @@ export const projectsRouter = createTRPCRouter({
           await tx.comment.deleteMany({ where: { bugId: bug.id } });
           await tx.attachment.deleteMany({ where: { bugId: bug.id } });
           await tx.auditLog.deleteMany({ where: { bugId: bug.id } });
-          await tx.annotation.deleteMany({ where: { bugId: bug.id } });
+          // Note: Annotation-Bug links are cleared automatically via implicit many-to-many
         }
 
         await tx.bug.deleteMany({ where: { projectId } });

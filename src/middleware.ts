@@ -41,9 +41,11 @@ export function middleware(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  // Redirect logged-in users away from auth routes
+  // Redirect logged-in users away from auth routes to their default org
   if (isAuthRoute && isLoggedIn) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    // Don't redirect to /dashboard to avoid potential loops
+    // Let the auth pages handle redirection themselves
+    return NextResponse.next();
   }
 
   // Allow public routes

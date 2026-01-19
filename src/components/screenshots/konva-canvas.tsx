@@ -186,6 +186,7 @@ function KonvaCanvasInner({
             pointerLength={10}
             pointerWidth={10}
             fill={annotation.stroke}
+            hitStrokeWidth={20}
             shadowColor={isSelected ? "blue" : undefined}
             shadowBlur={isSelected ? 10 : 0}
           />
@@ -198,6 +199,7 @@ function KonvaCanvasInner({
             tension={0.5}
             lineCap="round"
             lineJoin="round"
+            hitStrokeWidth={20}
             shadowColor={isSelected ? "blue" : undefined}
             shadowBlur={isSelected ? 10 : 0}
           />

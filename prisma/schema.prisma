@@ -272,7 +272,6 @@ model Screenshot {
 model Annotation {
   id           String         @id @default(cuid())
   screenshotId String
-  bugId        String?
   type         AnnotationType
   x            Float // Normalized 0-1
   y            Float // Normalized 0-1
@@ -288,10 +287,9 @@ model Annotation {
   updatedAt    DateTime       @updatedAt
 
   screenshot Screenshot @relation(fields: [screenshotId], references: [id], onDelete: Cascade)
-  bug        Bug?       @relation(fields: [bugId], references: [id], onDelete: SetNull)
+  bugs       Bug[]      // Many-to-many: one annotation can link to multiple bugs
 
   @@index([screenshotId])
-  @@index([bugId])
 }
 
 model Bug {
