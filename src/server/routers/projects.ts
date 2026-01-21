@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { BugStatus } from "@prisma/client";
+import { TestCaseStatus } from "@prisma/client";
 import {
   createTRPCRouter,
   orgProcedure,
@@ -31,7 +31,7 @@ export const projectsRouter = createTRPCRouter({
   create: orgProcedure
     .input(createProjectSchema)
     .mutation(async ({ ctx, input }) => {
-      const { organizationId, name, description, color } = input;
+      const { organizationId, name, code, description, color } = input;
 
       // Generate unique slug
       let slug = generateSlug(name);
@@ -58,6 +58,7 @@ export const projectsRouter = createTRPCRouter({
           organizationId,
           name,
           slug,
+          code: code || "",
           description,
           color,
         },
@@ -72,7 +73,7 @@ export const projectsRouter = createTRPCRouter({
   update: orgProcedure
     .input(updateProjectSchema)
     .mutation(async ({ ctx, input }) => {
-      const { organizationId, projectId, name, description, color } = input;
+      const { organizationId, projectId, name, code, description, color } = input;
 
       const project = await ctx.db.project.findUnique({
         where: { id: projectId },
@@ -87,6 +88,7 @@ export const projectsRouter = createTRPCRouter({
 
       const updateData: Record<string, unknown> = {};
       if (name !== undefined) updateData.name = name;
+      if (code !== undefined) updateData.code = code;
       if (description !== undefined) updateData.description = description;
       if (color !== undefined) updateData.color = color;
 
@@ -146,37 +148,34 @@ export const projectsRouter = createTRPCRouter({
 
       // Delete in transaction - cascading deletes are handled by Prisma
       await ctx.db.$transaction(async (tx) => {
-        // Delete flows, screenshots, annotations
-        const flows = await tx.flow.findMany({
+        // Delete modules, test cases, screenshots, annotations
+        const modules = await tx.module.findMany({
           where: { projectId },
           select: { id: true },
         });
 
-        for (const flow of flows) {
-          await tx.annotation.deleteMany({
-            where: { screenshot: { flowId: flow.id } },
+        for (const module of modules) {
+          const testCases = await tx.testCase.findMany({
+            where: { moduleId: module.id },
+            select: { id: true },
           });
-          await tx.screenshot.deleteMany({
-            where: { flowId: flow.id },
-          });
+
+          for (const testCase of testCases) {
+            await tx.annotation.deleteMany({
+              where: { screenshot: { testCaseId: testCase.id } },
+            });
+            await tx.screenshot.deleteMany({
+              where: { testCaseId: testCase.id },
+            });
+            await tx.comment.deleteMany({ where: { testCaseId: testCase.id } });
+            await tx.attachment.deleteMany({ where: { testCaseId: testCase.id } });
+            await tx.auditLog.deleteMany({ where: { testCaseId: testCase.id } });
+          }
+
+          await tx.testCase.deleteMany({ where: { moduleId: module.id } });
         }
 
-        await tx.flow.deleteMany({ where: { projectId } });
-
-        // Delete bugs and related data
-        const bugs = await tx.bug.findMany({
-          where: { projectId },
-          select: { id: true },
-        });
-
-        for (const bug of bugs) {
-          await tx.comment.deleteMany({ where: { bugId: bug.id } });
-          await tx.attachment.deleteMany({ where: { bugId: bug.id } });
-          await tx.auditLog.deleteMany({ where: { bugId: bug.id } });
-          // Note: Annotation-Bug links are cleared automatically via implicit many-to-many
-        }
-
-        await tx.bug.deleteMany({ where: { projectId } });
+        await tx.module.deleteMany({ where: { projectId } });
 
         // Finally delete the project
         await tx.project.delete({ where: { id: projectId } });
@@ -209,44 +208,51 @@ export const projectsRouter = createTRPCRouter({
         include: {
           _count: {
             select: {
-              flows: true,
-              bugs: true,
+              modules: true,
             },
           },
         },
         orderBy: [{ isArchived: "asc" }, { updatedAt: "desc" }],
       });
 
-      // Get bug status counts for each project
+      // Get test case status counts for each project
       const projectsWithStats = await Promise.all(
         projects.map(async (project) => {
-          const bugStats = await ctx.db.bug.groupBy({
+          // Get total test case count through modules
+          const testCaseCount = await ctx.db.testCase.count({
+            where: { module: { projectId: project.id } },
+          });
+
+          const testCaseStats = await ctx.db.testCase.groupBy({
             by: ["status"],
-            where: { projectId: project.id },
+            where: { module: { projectId: project.id } },
             _count: { status: true },
           });
 
           const statusCounts = {
-            open: 0,
-            inProgress: 0,
-            resolved: 0,
-            total: 0,
+            passed: 0,
+            failed: 0,
+            pending: 0,
+            total: testCaseCount,
           };
 
-          bugStats.forEach((stat) => {
-            statusCounts.total += stat._count.status;
-            if (stat.status === BugStatus.OPEN || stat.status === BugStatus.REOPENED) {
-              statusCounts.open += stat._count.status;
-            } else if (stat.status === BugStatus.IN_PROGRESS || stat.status === BugStatus.IN_REVIEW) {
-              statusCounts.inProgress += stat._count.status;
-            } else {
-              statusCounts.resolved += stat._count.status;
+          testCaseStats.forEach((stat: { status: TestCaseStatus; _count: { status: number } }) => {
+            if (stat.status === TestCaseStatus.PASSED) {
+              statusCounts.passed += stat._count.status;
+            } else if (stat.status === TestCaseStatus.FAILED) {
+              statusCounts.failed += stat._count.status;
+            } else if (stat.status === TestCaseStatus.PENDING || stat.status === TestCaseStatus.DRAFT) {
+              statusCounts.pending += stat._count.status;
             }
           });
 
           return {
             ...project,
-            bugStats: statusCounts,
+            _count: {
+              ...project._count,
+              testCases: testCaseCount,
+            },
+            testCaseStats: statusCounts,
           };
         })
       );
@@ -267,16 +273,17 @@ export const projectsRouter = createTRPCRouter({
         include: {
           _count: {
             select: {
-              flows: true,
-              bugs: true,
+              modules: true,
             },
           },
-          flows: {
+          modules: {
+            where: { parentId: null }, // Only root modules
             orderBy: { order: "asc" },
             include: {
               _count: {
                 select: {
-                  screenshots: true,
+                  testCases: true,
+                  children: true,
                 },
               },
             },
@@ -291,34 +298,37 @@ export const projectsRouter = createTRPCRouter({
         });
       }
 
-      // Get bug statistics
-      const bugStats = await ctx.db.bug.groupBy({
+      // Get test case statistics
+      const testCaseStats = await ctx.db.testCase.groupBy({
         by: ["status"],
-        where: { projectId },
+        where: { module: { projectId } },
         _count: { status: true },
       });
 
+      const testCaseCount = await ctx.db.testCase.count({
+        where: { module: { projectId } },
+      });
+
       const statusCounts = {
-        open: 0,
-        inProgress: 0,
-        resolved: 0,
-        total: 0,
+        passed: 0,
+        failed: 0,
+        pending: 0,
+        total: testCaseCount,
       };
 
-      bugStats.forEach((stat) => {
-        statusCounts.total += stat._count.status;
-        if (stat.status === BugStatus.OPEN || stat.status === BugStatus.REOPENED) {
-          statusCounts.open += stat._count.status;
-        } else if (stat.status === BugStatus.IN_PROGRESS || stat.status === BugStatus.IN_REVIEW) {
-          statusCounts.inProgress += stat._count.status;
-        } else {
-          statusCounts.resolved += stat._count.status;
+      testCaseStats.forEach((stat: { status: TestCaseStatus; _count: { status: number } }) => {
+        if (stat.status === TestCaseStatus.PASSED) {
+          statusCounts.passed += stat._count.status;
+        } else if (stat.status === TestCaseStatus.FAILED) {
+          statusCounts.failed += stat._count.status;
+        } else if (stat.status === TestCaseStatus.PENDING || stat.status === TestCaseStatus.DRAFT) {
+          statusCounts.pending += stat._count.status;
         }
       });
 
-      // Get recent bugs
-      const recentBugs = await ctx.db.bug.findMany({
-        where: { projectId },
+      // Get recent test cases
+      const recentTestCases = await ctx.db.testCase.findMany({
+        where: { module: { projectId } },
         take: 5,
         orderBy: { createdAt: "desc" },
         select: {
@@ -335,7 +345,7 @@ export const projectsRouter = createTRPCRouter({
 
       // Get recent activity
       const recentActivity = await ctx.db.auditLog.findMany({
-        where: { bug: { projectId } },
+        where: { testCase: { module: { projectId } } },
         take: 10,
         orderBy: { createdAt: "desc" },
         select: {
@@ -346,7 +356,7 @@ export const projectsRouter = createTRPCRouter({
           user: {
             select: { name: true, email: true, avatarUrl: true },
           },
-          bug: {
+          testCase: {
             select: { id: true, title: true },
           },
         },
@@ -354,8 +364,12 @@ export const projectsRouter = createTRPCRouter({
 
       return {
         ...project,
-        bugStats: statusCounts,
-        recentBugs,
+        _count: {
+          ...project._count,
+          testCases: testCaseCount,
+        },
+        testCaseStats: statusCounts,
+        recentTestCases,
         recentActivity,
       };
     }),

@@ -6,7 +6,7 @@ import {
   updateAnnotationSchema,
   deleteAnnotationSchema,
   getAnnotationsByScreenshotSchema,
-  linkAnnotationToBugSchema,
+  linkAnnotationToTestCaseSchema,
   toPrismaAnnotationType,
   fromPrismaAnnotationType,
 } from "@/lib/validations/annotation";
@@ -22,14 +22,18 @@ async function verifyScreenshotAccess(
   const screenshot = await db.screenshot.findUnique({
     where: { id: screenshotId },
     include: {
-      flow: {
+      testCase: {
         include: {
-          project: {
+          module: {
             include: {
-              organization: {
+              project: {
                 include: {
-                  members: {
-                    where: { userId },
+                  organization: {
+                    include: {
+                      members: {
+                        where: { userId },
+                      },
+                    },
                   },
                 },
               },
@@ -40,7 +44,7 @@ async function verifyScreenshotAccess(
     },
   });
 
-  if (!screenshot || screenshot.flow.project.organization.members.length === 0) {
+  if (!screenshot || screenshot.testCase.module.project.organization.members.length === 0) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Screenshot not found",
@@ -63,14 +67,18 @@ async function verifyAnnotationAccess(
     include: {
       screenshot: {
         include: {
-          flow: {
+          testCase: {
             include: {
-              project: {
+              module: {
                 include: {
-                  organization: {
+                  project: {
                     include: {
-                      members: {
-                        where: { userId },
+                      organization: {
+                        include: {
+                          members: {
+                            where: { userId },
+                          },
+                        },
                       },
                     },
                   },
@@ -83,7 +91,7 @@ async function verifyAnnotationAccess(
     },
   });
 
-  if (!annotation || annotation.screenshot.flow.project.organization.members.length === 0) {
+  if (!annotation || annotation.screenshot.testCase.module.project.organization.members.length === 0) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Annotation not found",
@@ -109,7 +117,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { screenshotId },
         orderBy: { order: "asc" },
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,
@@ -192,7 +200,7 @@ export const annotationsRouter = createTRPCRouter({
               stroke: annotation.stroke,
               strokeWidth: annotation.strokeWidth,
               fill: annotation.fill,
-              // Note: Bug links are managed via the bugs.create mutation (many-to-many)
+              // Note: TestCase links are managed via the testcases.create mutation (many-to-many)
             },
           });
         }
@@ -221,7 +229,7 @@ export const annotationsRouter = createTRPCRouter({
                 stroke: annotation.stroke,
                 strokeWidth: annotation.strokeWidth,
                 fill: annotation.fill,
-                // Note: Bug links are managed via the bugs.create mutation (many-to-many)
+                // Note: TestCase links are managed via the testcases.create mutation (many-to-many)
                 order: nextOrder++,
               },
             });
@@ -234,7 +242,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { screenshotId },
         orderBy: { order: "asc" },
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,
@@ -267,7 +275,7 @@ export const annotationsRouter = createTRPCRouter({
         where: { id },
         data: updates,
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,
@@ -304,27 +312,31 @@ export const annotationsRouter = createTRPCRouter({
     }),
 
   /**
-   * Link an annotation to a bug (many-to-many - adds to existing links)
+   * Link an annotation to a test case (many-to-many - adds to existing links)
    */
-  linkToBug: protectedProcedure
-    .input(linkAnnotationToBugSchema)
+  linkToTestCase: protectedProcedure
+    .input(linkAnnotationToTestCaseSchema)
     .mutation(async ({ ctx, input }) => {
-      const { annotationId, bugId } = input;
+      const { annotationId, testCaseId } = input;
 
       // Verify access to annotation
       const annotation = await verifyAnnotationAccess(ctx.db, annotationId, ctx.session.user.id);
 
-      // If linking to a bug, verify access to the bug
-      if (bugId) {
-        const bug = await ctx.db.bug.findUnique({
-          where: { id: bugId },
+      // If linking to a test case, verify access to the test case
+      if (testCaseId) {
+        const testCase = await ctx.db.testCase.findUnique({
+          where: { id: testCaseId },
           include: {
-            project: {
+            module: {
               include: {
-                organization: {
+                project: {
                   include: {
-                    members: {
-                      where: { userId: ctx.session.user.id },
+                    organization: {
+                      include: {
+                        members: {
+                          where: { userId: ctx.session.user.id },
+                        },
+                      },
                     },
                   },
                 },
@@ -333,32 +345,49 @@ export const annotationsRouter = createTRPCRouter({
           },
         });
 
-        if (!bug || bug.project.organization.members.length === 0) {
+        if (!testCase || testCase.module.project.organization.members.length === 0) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Bug not found",
+            message: "Test case not found",
           });
         }
 
-        // Verify bug belongs to same organization
-        const screenshotOrgId = annotation.screenshot.flow.project.organizationId;
-        if (bug.project.organizationId !== screenshotOrgId) {
+        // Verify test case belongs to same organization
+        const screenshotOrgId = annotation.screenshot.testCase.module.project.organizationId;
+        if (testCase.module.project.organizationId !== screenshotOrgId) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Bug must belong to the same organization",
+            message: "Test case must belong to the same organization",
           });
         }
 
-        // Connect the bug to the annotation (many-to-many)
+        // Check if test case is already linked to this annotation
+        const existingLink = await ctx.db.annotation.findFirst({
+          where: {
+            id: annotationId,
+            testCases: {
+              some: { id: testCaseId },
+            },
+          },
+        });
+
+        if (existingLink) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This test case is already linked to this annotation",
+          });
+        }
+
+        // Connect the test case to the annotation (many-to-many)
         const updatedAnnotation = await ctx.db.annotation.update({
           where: { id: annotationId },
           data: {
-            bugs: {
-              connect: { id: bugId },
+            testCases: {
+              connect: { id: testCaseId },
             },
           },
           include: {
-            bugs: {
+            testCases: {
               select: {
                 id: true,
                 title: true,
@@ -376,11 +405,11 @@ export const annotationsRouter = createTRPCRouter({
         };
       }
 
-      // If no bugId provided, just return the annotation as is
+      // If no testCaseId provided, just return the annotation as is
       const currentAnnotation = await ctx.db.annotation.findUnique({
         where: { id: annotationId },
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,
@@ -406,33 +435,33 @@ export const annotationsRouter = createTRPCRouter({
     }),
 
   /**
-   * Unlink an annotation from a bug
+   * Unlink an annotation from a test case
    */
-  unlinkFromBug: protectedProcedure
-    .input(linkAnnotationToBugSchema)
+  unlinkFromTestCase: protectedProcedure
+    .input(linkAnnotationToTestCaseSchema)
     .mutation(async ({ ctx, input }) => {
-      const { annotationId, bugId } = input;
+      const { annotationId, testCaseId } = input;
 
       // Verify access to annotation
       await verifyAnnotationAccess(ctx.db, annotationId, ctx.session.user.id);
 
-      if (!bugId) {
+      if (!testCaseId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Bug ID is required for unlinking",
+          message: "Test case ID is required for unlinking",
         });
       }
 
-      // Disconnect the bug from the annotation
+      // Disconnect the test case from the annotation
       const updatedAnnotation = await ctx.db.annotation.update({
         where: { id: annotationId },
         data: {
-          bugs: {
-            disconnect: { id: bugId },
+          testCases: {
+            disconnect: { id: testCaseId },
           },
         },
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,

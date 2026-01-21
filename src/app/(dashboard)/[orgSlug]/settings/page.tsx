@@ -144,7 +144,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="container max-w-4xl py-8">
+      <div className="container max-w-4xl px-4 py-4 sm:py-8">
         <Skeleton className="h-10 w-48 mb-2" />
         <Skeleton className="h-5 w-72 mb-8" />
         <div className="space-y-4">
@@ -158,9 +158,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container max-w-4xl py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+    <div className="container max-w-4xl px-4 py-4 sm:py-8">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-2">
           Manage your organization settings and preferences
         </p>

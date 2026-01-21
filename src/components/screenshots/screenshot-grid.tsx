@@ -42,13 +42,15 @@ import {
 import { ScreenshotUpload } from "./screenshot-upload";
 
 interface ScreenshotGridProps {
-  flowId: string;
+  testCaseId: string;
+  moduleId: string;
   projectId: string;
   orgSlug: string;
 }
 
 export function ScreenshotGrid({
-  flowId,
+  testCaseId,
+  moduleId,
   projectId,
   orgSlug,
 }: ScreenshotGridProps) {
@@ -61,13 +63,13 @@ export function ScreenshotGrid({
   );
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const { data: screenshots = [], isLoading } = trpc.screenshots.getByFlow.useQuery(
-    { flowId }
+  const { data: screenshots = [], isLoading } = trpc.screenshots.getByTestCase.useQuery(
+    { testCaseId }
   );
 
   const updateMutation = trpc.screenshots.update.useMutation({
     onSuccess: () => {
-      utils.screenshots.getByFlow.invalidate({ flowId });
+      utils.screenshots.getByTestCase.invalidate({ testCaseId });
     },
     onError: (error: { message: string }) => {
       toast.error(error.message);
@@ -78,7 +80,7 @@ export function ScreenshotGrid({
     onSuccess: () => {
       toast.success("Screenshot deleted");
       setDeletingScreenshot(null);
-      utils.screenshots.getByFlow.invalidate({ flowId });
+      utils.screenshots.getByTestCase.invalidate({ testCaseId });
     },
     onError: (error: { message: string }) => {
       toast.error(error.message);
@@ -88,7 +90,7 @@ export function ScreenshotGrid({
   const reorderMutation = trpc.screenshots.reorder.useMutation({
     onError: (error: { message: string }) => {
       toast.error(error.message);
-      utils.screenshots.getByFlow.invalidate({ flowId });
+      utils.screenshots.getByTestCase.invalidate({ testCaseId });
     },
   });
 
@@ -120,21 +122,21 @@ export function ScreenshotGrid({
         const screenshotIds = newOrder.map((s: Screenshot) => s.id);
 
         // Optimistic update
-        utils.screenshots.getByFlow.setData({ flowId }, newOrder);
+        utils.screenshots.getByTestCase.setData({ testCaseId }, newOrder);
 
-        reorderMutation.mutate({ flowId, screenshotIds });
+        reorderMutation.mutate({ testCaseId, screenshotIds });
       }
     },
-    [screenshots, flowId, utils.screenshots.getByFlow, reorderMutation]
+    [screenshots, testCaseId, utils.screenshots.getByTestCase, reorderMutation]
   );
 
   const handleView = useCallback(
     (screenshotId: string) => {
       router.push(
-        `/${orgSlug}/projects/${projectId}/flows/${flowId}/screenshots/${screenshotId}`
+        `/${orgSlug}/projects/${projectId}/modules/${moduleId}/testcases/${testCaseId}/screenshots/${screenshotId}`
       );
     },
-    [router, orgSlug, projectId, flowId]
+    [router, orgSlug, projectId, moduleId, testCaseId]
   );
 
   const handleTitleChange = useCallback(
@@ -145,8 +147,8 @@ export function ScreenshotGrid({
   );
 
   const handleUploadComplete = useCallback(() => {
-    utils.screenshots.getByFlow.invalidate({ flowId });
-  }, [utils.screenshots.getByFlow, flowId]);
+    utils.screenshots.getByTestCase.invalidate({ testCaseId });
+  }, [utils.screenshots.getByTestCase, testCaseId]);
 
   const activeScreenshot = activeId
     ? screenshots.find((s: Screenshot) => s.id === activeId)
@@ -196,7 +198,7 @@ export function ScreenshotGrid({
           <ImageIcon className="h-12 w-12 text-muted-foreground/50 mb-4" />
           <h3 className="text-lg font-medium mb-2">No screenshots yet</h3>
           <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-            Upload screenshots to start annotating and tracking bugs.
+            Upload screenshots to start annotating and documenting test cases.
           </p>
           <Button onClick={() => setIsUploadOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
@@ -245,7 +247,7 @@ export function ScreenshotGrid({
 
       {/* Upload Dialog */}
       <ScreenshotUpload
-        flowId={flowId}
+        testCaseId={testCaseId}
         open={isUploadOpen}
         onOpenChange={setIsUploadOpen}
         onComplete={handleUploadComplete}

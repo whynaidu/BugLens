@@ -74,12 +74,13 @@ export function AnnotationToolbar({
 
   return (
     <TooltipProvider>
-      <div className="flex items-center gap-2 p-2 bg-background border-b">
+      <div className="flex flex-wrap items-center gap-1 sm:gap-2 p-2 bg-background border-b">
         {/* Drawing Tools */}
         <ToggleGroup
           type="single"
           value={selectedTool}
           onValueChange={(value) => value && onToolChange(value as AnnotationTool)}
+          className="flex-shrink-0"
         >
           {tools.map((tool) => (
             <Tooltip key={tool.value}>
@@ -87,7 +88,7 @@ export function AnnotationToolbar({
                 <ToggleGroupItem
                   value={tool.value}
                   aria-label={tool.label}
-                  className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                  className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground h-8 w-8 sm:h-9 sm:w-9"
                 >
                   <tool.icon className="h-4 w-4" />
                 </ToggleGroupItem>
@@ -99,16 +100,34 @@ export function AnnotationToolbar({
           ))}
         </ToggleGroup>
 
-        <Separator orientation="vertical" className="h-6" />
+        <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-        {/* Color Picker */}
+        {/* Color Picker - show fewer colors on mobile */}
         <div className="flex items-center gap-1">
-          {ANNOTATION_COLORS.slice(0, 5).map((color) => (
+          {ANNOTATION_COLORS.slice(0, 3).map((color) => (
             <Tooltip key={color}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                  className={`h-5 w-5 sm:h-6 sm:w-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                    strokeColor === color ? "border-foreground scale-110" : "border-transparent"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  onClick={() => onStrokeColorChange(color)}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Color</p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
+          {/* Additional colors hidden on mobile */}
+          {ANNOTATION_COLORS.slice(3, 5).map((color) => (
+            <Tooltip key={color}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={`hidden sm:block h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
                     strokeColor === color ? "border-foreground scale-110" : "border-transparent"
                   }`}
                   style={{ backgroundColor: color }}
@@ -122,7 +141,7 @@ export function AnnotationToolbar({
           ))}
         </div>
 
-        <Separator orientation="vertical" className="h-6" />
+        <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
         {/* Delete */}
         <Tooltip>
@@ -132,7 +151,7 @@ export function AnnotationToolbar({
               size="icon"
               onClick={onDelete}
               disabled={!hasSelection}
-              className="h-8 w-8"
+              className="h-7 w-7 sm:h-8 sm:w-8"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -142,10 +161,10 @@ export function AnnotationToolbar({
           </TooltipContent>
         </Tooltip>
 
-        <Separator orientation="vertical" className="h-6" />
+        <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-        {/* Undo/Redo */}
-        <div className="flex items-center gap-1">
+        {/* Undo/Redo - hidden on very small screens */}
+        <div className="hidden xs:flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -153,7 +172,7 @@ export function AnnotationToolbar({
                 size="icon"
                 onClick={onUndo}
                 disabled={!canUndo}
-                className="h-8 w-8"
+                className="h-7 w-7 sm:h-8 sm:w-8"
               >
                 <Undo2 className="h-4 w-4" />
               </Button>
@@ -170,7 +189,7 @@ export function AnnotationToolbar({
                 size="icon"
                 onClick={onRedo}
                 disabled={!canRedo}
-                className="h-8 w-8"
+                className="h-7 w-7 sm:h-8 sm:w-8"
               >
                 <Redo2 className="h-4 w-4" />
               </Button>
@@ -214,7 +233,7 @@ export function AnnotationToolbar({
           </div>
         )}
 
-        <Separator orientation="vertical" className="h-6" />
+        <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
         {/* Zoom Controls */}
         <div className="flex items-center gap-1">
@@ -225,7 +244,7 @@ export function AnnotationToolbar({
                 size="icon"
                 onClick={onZoomOut}
                 disabled={zoom <= 0.25}
-                className="h-8 w-8"
+                className="h-7 w-7 sm:h-8 sm:w-8"
               >
                 <ZoomOut className="h-4 w-4" />
               </Button>
@@ -235,7 +254,7 @@ export function AnnotationToolbar({
             </TooltipContent>
           </Tooltip>
 
-          <span className="text-sm text-muted-foreground w-12 text-center">
+          <span className="text-xs sm:text-sm text-muted-foreground w-10 sm:w-12 text-center">
             {Math.round(zoom * 100)}%
           </span>
 
@@ -246,7 +265,7 @@ export function AnnotationToolbar({
                 size="icon"
                 onClick={onZoomIn}
                 disabled={zoom >= 4}
-                className="h-8 w-8"
+                className="h-7 w-7 sm:h-8 sm:w-8"
               >
                 <ZoomIn className="h-4 w-4" />
               </Button>
@@ -262,7 +281,7 @@ export function AnnotationToolbar({
                 variant="ghost"
                 size="icon"
                 onClick={onZoomReset}
-                className="h-8 w-8"
+                className="hidden sm:flex h-8 w-8"
               >
                 <Maximize className="h-4 w-4" />
               </Button>

@@ -15,19 +15,23 @@ export const commentsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createCommentSchema)
     .mutation(async ({ ctx, input }) => {
-      const { bugId, content } = input;
+      const { testCaseId, content } = input;
 
-      // Verify bug exists and user has access
-      const bug = await ctx.db.bug.findUnique({
-        where: { id: bugId },
+      // Verify test case exists and user has access
+      const testCase = await ctx.db.testCase.findUnique({
+        where: { id: testCaseId },
         include: {
-          project: {
+          module: {
             include: {
-              organization: {
+              project: {
                 include: {
-                  members: {
-                    where: { userId: ctx.session.user.id },
-                    select: { role: true },
+                  organization: {
+                    include: {
+                      members: {
+                        where: { userId: ctx.session.user.id },
+                        select: { role: true },
+                      },
+                    },
                   },
                 },
               },
@@ -36,25 +40,25 @@ export const commentsRouter = createTRPCRouter({
         },
       });
 
-      if (!bug) {
+      if (!testCase) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Bug not found",
+          message: "Test case not found",
         });
       }
 
-      const membership = bug.project.organization.members[0];
+      const membership = testCase.module.project.organization.members[0];
       if (!membership) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "You don't have access to this bug",
+          message: "You don't have access to this test case",
         });
       }
 
       // Create the comment
       const comment = await ctx.db.comment.create({
         data: {
-          bugId,
+          testCaseId,
           authorId: ctx.session.user.id,
           content,
         },
@@ -71,7 +75,7 @@ export const commentsRouter = createTRPCRouter({
       });
 
       // Log audit
-      await logCommentAdded(bugId, ctx.session.user.id, comment.id);
+      await logCommentAdded(testCaseId, ctx.session.user.id, comment.id);
 
       // Handle mentions and create notifications
       const mentions = extractMentions(content);
@@ -94,33 +98,33 @@ export const commentsRouter = createTRPCRouter({
               .filter((u) => u.id !== ctx.session.user.id) // Don't notify self
               .map((user) => ({
                 userId: user.id,
-                type: "BUG_MENTIONED",
+                type: "TESTCASE_MENTIONED",
                 title: "You were mentioned in a comment",
-                message: `${ctx.session.user.name || ctx.session.user.email} mentioned you in a comment on "${bug.title}"`,
+                message: `${ctx.session.user.name || ctx.session.user.email} mentioned you in a comment on "${testCase.title}"`,
                 data: {
-                  bugId,
+                  testCaseId,
                   commentId: comment.id,
-                  projectId: bug.projectId,
-                  organizationId: bug.project.organizationId,
+                  projectId: testCase.module.projectId,
+                  organizationId: testCase.module.project.organizationId,
                 },
               })),
           });
         }
       }
 
-      // Also notify the bug assignee if they're not the commenter
-      if (bug.assigneeId && bug.assigneeId !== ctx.session.user.id) {
+      // Also notify the test case assignee if they're not the commenter
+      if (testCase.assigneeId && testCase.assigneeId !== ctx.session.user.id) {
         await ctx.db.notification.create({
           data: {
-            userId: bug.assigneeId,
-            type: "BUG_COMMENTED",
-            title: "New comment on assigned bug",
-            message: `${ctx.session.user.name || ctx.session.user.email} commented on "${bug.title}"`,
+            userId: testCase.assigneeId,
+            type: "TESTCASE_COMMENTED",
+            title: "New comment on assigned test case",
+            message: `${ctx.session.user.name || ctx.session.user.email} commented on "${testCase.title}"`,
             data: {
-              bugId,
+              testCaseId,
               commentId: comment.id,
-              projectId: bug.projectId,
-              organizationId: bug.project.organizationId,
+              projectId: testCase.module.projectId,
+              organizationId: testCase.module.project.organizationId,
             },
           },
         });
@@ -141,15 +145,19 @@ export const commentsRouter = createTRPCRouter({
       const comment = await ctx.db.comment.findUnique({
         where: { id },
         include: {
-          bug: {
+          testCase: {
             include: {
-              project: {
+              module: {
                 include: {
-                  organization: {
+                  project: {
                     include: {
-                      members: {
-                        where: { userId: ctx.session.user.id },
-                        select: { role: true },
+                      organization: {
+                        include: {
+                          members: {
+                            where: { userId: ctx.session.user.id },
+                            select: { role: true },
+                          },
+                        },
                       },
                     },
                   },
@@ -168,7 +176,7 @@ export const commentsRouter = createTRPCRouter({
       }
 
       // Check ownership or admin role
-      const membership = comment.bug.project.organization.members[0];
+      const membership = comment.testCase.module.project.organization.members[0];
       const isOwner = comment.authorId === ctx.session.user.id;
       const isAdmin = membership?.role === "ADMIN";
 
@@ -202,7 +210,7 @@ export const commentsRouter = createTRPCRouter({
    * Delete a comment (own comments only)
    */
   delete: protectedProcedure
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().cuid() }))
     .mutation(async ({ ctx, input }) => {
       const { id } = input;
 
@@ -210,15 +218,19 @@ export const commentsRouter = createTRPCRouter({
       const comment = await ctx.db.comment.findUnique({
         where: { id },
         include: {
-          bug: {
+          testCase: {
             include: {
-              project: {
+              module: {
                 include: {
-                  organization: {
+                  project: {
                     include: {
-                      members: {
-                        where: { userId: ctx.session.user.id },
-                        select: { role: true },
+                      organization: {
+                        include: {
+                          members: {
+                            where: { userId: ctx.session.user.id },
+                            select: { role: true },
+                          },
+                        },
                       },
                     },
                   },
@@ -237,7 +249,7 @@ export const commentsRouter = createTRPCRouter({
       }
 
       // Check ownership or admin role
-      const membership = comment.bug.project.organization.members[0];
+      const membership = comment.testCase.module.project.organization.members[0];
       const isOwner = comment.authorId === ctx.session.user.id;
       const isAdmin = membership?.role === "ADMIN";
 
@@ -257,30 +269,34 @@ export const commentsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get comments for a bug
+   * Get comments for a test case
    */
-  getByBug: protectedProcedure
+  getByTestCase: protectedProcedure
     .input(
       z.object({
-        bugId: z.string(),
+        testCaseId: z.string().cuid(),
         limit: z.number().min(1).max(100).default(50),
         cursor: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { bugId, limit, cursor } = input;
+      const { testCaseId, limit, cursor } = input;
 
-      // Verify bug exists and user has access
-      const bug = await ctx.db.bug.findUnique({
-        where: { id: bugId },
+      // Verify test case exists and user has access
+      const testCase = await ctx.db.testCase.findUnique({
+        where: { id: testCaseId },
         include: {
-          project: {
+          module: {
             include: {
-              organization: {
+              project: {
                 include: {
-                  members: {
-                    where: { userId: ctx.session.user.id },
-                    select: { role: true },
+                  organization: {
+                    include: {
+                      members: {
+                        where: { userId: ctx.session.user.id },
+                        select: { role: true },
+                      },
+                    },
                   },
                 },
               },
@@ -289,24 +305,24 @@ export const commentsRouter = createTRPCRouter({
         },
       });
 
-      if (!bug) {
+      if (!testCase) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Bug not found",
+          message: "Test case not found",
         });
       }
 
-      const membership = bug.project.organization.members[0];
+      const membership = testCase.module.project.organization.members[0];
       if (!membership) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "You don't have access to this bug",
+          message: "You don't have access to this test case",
         });
       }
 
       // Fetch comments
       const comments = await ctx.db.comment.findMany({
-        where: { bugId },
+        where: { testCaseId },
         take: limit + 1,
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: { createdAt: "asc" }, // Oldest first for comments
@@ -335,13 +351,13 @@ export const commentsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get comment count for a bug
+   * Get comment count for a test case
    */
   getCount: protectedProcedure
-    .input(z.object({ bugId: z.string() }))
+    .input(z.object({ testCaseId: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
       const count = await ctx.db.comment.count({
-        where: { bugId: input.bugId },
+        where: { testCaseId: input.testCaseId },
       });
       return count;
     }),

@@ -14,7 +14,7 @@ export function fromPrismaAnnotationType(type: string): "rectangle" | "circle" |
 }
 
 // Base annotation schema for shared fields
-// Note: Bug links are managed via many-to-many relationship (bugs.create connects to annotation)
+// Note: TestCase links are managed via many-to-many relationship (testcases.create connects to annotation)
 const annotationBaseSchema = z.object({
   type: annotationTypeSchema,
   x: z.number().min(0).max(1), // Normalized 0-1
@@ -66,9 +66,11 @@ export const createAnnotationSchema = z.object({
 });
 
 // Update annotation input
-// Note: Bug links are managed via many-to-many relationship
+// Note: TestCase links are managed via many-to-many relationship
+// Note: Using z.string().min(1) instead of z.string().cuid() to allow both
+// temporary UUIDs from frontend and CUIDs from database
 export const updateAnnotationSchema = z.object({
-  id: z.string().cuid(),
+  id: z.string().min(1),
   x: z.number().min(0).max(1).optional(),
   y: z.number().min(0).max(1).optional(),
   width: z.number().min(0).max(1).optional(),
@@ -81,7 +83,7 @@ export const updateAnnotationSchema = z.object({
 });
 
 // Batch update annotations for a screenshot
-// Note: Bug links are managed via many-to-many relationship
+// Note: TestCase links are managed via many-to-many relationship
 export const batchUpdateAnnotationsSchema = z.object({
   screenshotId: z.string().cuid(),
   annotations: z.array(
@@ -102,8 +104,9 @@ export const batchUpdateAnnotationsSchema = z.object({
 });
 
 // Delete annotation input
+// Note: Using z.string().min(1) to allow both temporary UUIDs and CUIDs
 export const deleteAnnotationSchema = z.object({
-  id: z.string().cuid(),
+  id: z.string().min(1),
 });
 
 // Get annotations by screenshot
@@ -111,10 +114,11 @@ export const getAnnotationsByScreenshotSchema = z.object({
   screenshotId: z.string().cuid(),
 });
 
-// Link annotation to bug
-export const linkAnnotationToBugSchema = z.object({
-  annotationId: z.string().cuid(),
-  bugId: z.string().cuid().nullable(),
+// Link annotation to test case
+// Note: Using z.string().min(1) for annotationId to allow both temporary UUIDs and CUIDs
+export const linkAnnotationToTestCaseSchema = z.object({
+  annotationId: z.string().min(1),
+  testCaseId: z.string().cuid().nullable(),
 });
 
 // Types
@@ -124,4 +128,4 @@ export type UpdateAnnotationInput = z.infer<typeof updateAnnotationSchema>;
 export type BatchUpdateAnnotationsInput = z.infer<typeof batchUpdateAnnotationsSchema>;
 export type DeleteAnnotationInput = z.infer<typeof deleteAnnotationSchema>;
 export type GetAnnotationsByScreenshotInput = z.infer<typeof getAnnotationsByScreenshotSchema>;
-export type LinkAnnotationToBugInput = z.infer<typeof linkAnnotationToBugSchema>;
+export type LinkAnnotationToTestCaseInput = z.infer<typeof linkAnnotationToTestCaseSchema>;

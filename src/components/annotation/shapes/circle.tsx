@@ -18,7 +18,7 @@ export function CircleShape({
   onChange,
   onDoubleClick,
   draggable,
-  hasBug = false,
+  hasTestCase = false,
 }: AnnotationShapeProps) {
   const shapeRef = useRef<Konva.Ellipse>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -78,8 +78,8 @@ export function CircleShape({
           y={centerY}
           radiusX={radiusX}
           radiusY={radiusY}
-          stroke={hasBug ? "#22c55e" : annotation.stroke}
-          strokeWidth={hasBug ? 3 : annotation.strokeWidth}
+          stroke={hasTestCase ? "#22c55e" : annotation.stroke}
+          strokeWidth={hasTestCase ? 3 : annotation.strokeWidth}
           fill="transparent"
           draggable={draggable && isSelected}
           onClick={onSelect}
@@ -93,8 +93,8 @@ export function CircleShape({
           shadowForStrokeEnabled={false}
           hitStrokeWidth={10}
         />
-        {/* Bug indicator badge */}
-        {hasBug && (
+        {/* Test case indicator badge */}
+        {hasTestCase && (
           <Group x={centerX + radiusX - 8} y={centerY - radiusY - 8}>
             <KonvaCircle
               radius={10}
@@ -103,7 +103,7 @@ export function CircleShape({
               strokeWidth={2}
             />
             <Text
-              text="B"
+              text="T"
               fontSize={10}
               fontStyle="bold"
               fill="#ffffff"

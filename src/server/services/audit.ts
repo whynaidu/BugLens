@@ -4,17 +4,17 @@ import type { AuditAction, Prisma } from "@prisma/client";
 type AuditLogDetails = Prisma.InputJsonValue;
 
 /**
- * Log an audit action for a bug
+ * Log an audit action for a test case
  */
 export async function logAuditAction(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   action: AuditAction,
   details: AuditLogDetails = {}
 ) {
   return db.auditLog.create({
     data: {
-      bugId,
+      testCaseId,
       userId,
       action,
       details,
@@ -23,18 +23,18 @@ export async function logAuditAction(
 }
 
 /**
- * Log bug creation
+ * Log test case creation
  */
-export async function logBugCreated(
-  bugId: string,
+export async function logTestCaseCreated(
+  testCaseId: string,
   userId: string,
-  bugData: { title: string; status: string; severity: string; priority: string }
+  testCaseData: { title: string; status: string; severity: string; priority: string }
 ) {
-  return logAuditAction(bugId, userId, "CREATED", {
-    title: bugData.title,
-    status: bugData.status,
-    severity: bugData.severity,
-    priority: bugData.priority,
+  return logAuditAction(testCaseId, userId, "CREATED", {
+    title: testCaseData.title,
+    status: testCaseData.status,
+    severity: testCaseData.severity,
+    priority: testCaseData.priority,
   });
 }
 
@@ -42,12 +42,12 @@ export async function logBugCreated(
  * Log status change
  */
 export async function logStatusChange(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   fromStatus: string,
   toStatus: string
 ) {
-  return logAuditAction(bugId, userId, "STATUS_CHANGED", {
+  return logAuditAction(testCaseId, userId, "STATUS_CHANGED", {
     field: "status",
     from: fromStatus,
     to: toStatus,
@@ -58,7 +58,7 @@ export async function logStatusChange(
  * Log assignment change
  */
 export async function logAssignment(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   assigneeId: string | null,
   assigneeName: string | null,
@@ -66,14 +66,14 @@ export async function logAssignment(
   previousAssigneeName: string | null = null
 ) {
   if (assigneeId) {
-    return logAuditAction(bugId, userId, "ASSIGNED", {
+    return logAuditAction(testCaseId, userId, "ASSIGNED", {
       assigneeId,
       assigneeName,
       previousAssigneeId,
       previousAssigneeName,
     });
   } else {
-    return logAuditAction(bugId, userId, "UNASSIGNED", {
+    return logAuditAction(testCaseId, userId, "UNASSIGNED", {
       previousAssigneeId,
       previousAssigneeName,
     });
@@ -84,13 +84,13 @@ export async function logAssignment(
  * Log field update
  */
 export async function logFieldUpdate(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   field: string,
   from: string | null | undefined,
   to: string | null | undefined
 ) {
-  return logAuditAction(bugId, userId, "UPDATED", {
+  return logAuditAction(testCaseId, userId, "UPDATED", {
     field,
     from: from ?? null,
     to: to ?? null,
@@ -100,8 +100,8 @@ export async function logFieldUpdate(
 /**
  * Log comment added
  */
-export async function logCommentAdded(bugId: string, userId: string, commentId: string) {
-  return logAuditAction(bugId, userId, "COMMENTED", {
+export async function logCommentAdded(testCaseId: string, userId: string, commentId: string) {
+  return logAuditAction(testCaseId, userId, "COMMENTED", {
     commentId,
   });
 }
@@ -109,8 +109,8 @@ export async function logCommentAdded(bugId: string, userId: string, commentId: 
 /**
  * Log annotation added
  */
-export async function logAnnotationAdded(bugId: string, userId: string, annotationId: string) {
-  return logAuditAction(bugId, userId, "ANNOTATION_ADDED", {
+export async function logAnnotationAdded(testCaseId: string, userId: string, annotationId: string) {
+  return logAuditAction(testCaseId, userId, "ANNOTATION_ADDED", {
     annotationId,
   });
 }
@@ -118,8 +118,8 @@ export async function logAnnotationAdded(bugId: string, userId: string, annotati
 /**
  * Log annotation updated
  */
-export async function logAnnotationUpdated(bugId: string, userId: string, annotationId: string) {
-  return logAuditAction(bugId, userId, "ANNOTATION_UPDATED", {
+export async function logAnnotationUpdated(testCaseId: string, userId: string, annotationId: string) {
+  return logAuditAction(testCaseId, userId, "ANNOTATION_UPDATED", {
     annotationId,
   });
 }
@@ -127,8 +127,8 @@ export async function logAnnotationUpdated(bugId: string, userId: string, annota
 /**
  * Log annotation deleted
  */
-export async function logAnnotationDeleted(bugId: string, userId: string, annotationId: string) {
-  return logAuditAction(bugId, userId, "ANNOTATION_DELETED", {
+export async function logAnnotationDeleted(testCaseId: string, userId: string, annotationId: string) {
+  return logAuditAction(testCaseId, userId, "ANNOTATION_DELETED", {
     annotationId,
   });
 }
@@ -137,12 +137,12 @@ export async function logAnnotationDeleted(bugId: string, userId: string, annota
  * Log attachment added
  */
 export async function logAttachmentAdded(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   attachmentId: string,
   fileName: string
 ) {
-  return logAuditAction(bugId, userId, "ATTACHMENT_ADDED", {
+  return logAuditAction(testCaseId, userId, "ATTACHMENT_ADDED", {
     attachmentId,
     fileName,
   });
@@ -152,12 +152,12 @@ export async function logAttachmentAdded(
  * Log sync to external tool
  */
 export async function logSyncedToExternal(
-  bugId: string,
+  testCaseId: string,
   userId: string,
   integrationType: string,
   externalId: string
 ) {
-  return logAuditAction(bugId, userId, "SYNCED_TO_EXTERNAL", {
+  return logAuditAction(testCaseId, userId, "SYNCED_TO_EXTERNAL", {
     integrationType,
     externalId,
   });
@@ -166,31 +166,31 @@ export async function logSyncedToExternal(
 /**
  * Helper to compare and log changes
  */
-export async function logBugChanges(
-  bugId: string,
+export async function logTestCaseChanges(
+  testCaseId: string,
   userId: string,
-  oldBug: Record<string, string | null | undefined>,
-  newBug: Record<string, string | null | undefined>
+  oldTestCase: Record<string, string | null | undefined>,
+  newTestCase: Record<string, string | null | undefined>
 ) {
   const auditPromises: Promise<unknown>[] = [];
 
   // Check status change
-  if (oldBug.status !== newBug.status) {
+  if (oldTestCase.status !== newTestCase.status) {
     auditPromises.push(
-      logStatusChange(bugId, userId, oldBug.status as string, newBug.status as string)
+      logStatusChange(testCaseId, userId, oldTestCase.status as string, newTestCase.status as string)
     );
   }
 
   // Check assignment change
-  if (oldBug.assigneeId !== newBug.assigneeId) {
+  if (oldTestCase.assigneeId !== newTestCase.assigneeId) {
     auditPromises.push(
       logAssignment(
-        bugId,
+        testCaseId,
         userId,
-        newBug.assigneeId ?? null,
-        newBug.assigneeName ?? null,
-        oldBug.assigneeId ?? null,
-        oldBug.assigneeName ?? null
+        newTestCase.assigneeId ?? null,
+        newTestCase.assigneeName ?? null,
+        oldTestCase.assigneeId ?? null,
+        oldTestCase.assigneeName ?? null
       )
     );
   }
@@ -198,8 +198,8 @@ export async function logBugChanges(
   // Check other field changes
   const fieldsToTrack = ["title", "description", "severity", "priority"] as const;
   for (const field of fieldsToTrack) {
-    if (oldBug[field] !== newBug[field]) {
-      auditPromises.push(logFieldUpdate(bugId, userId, field, oldBug[field], newBug[field]));
+    if (oldTestCase[field] !== newTestCase[field]) {
+      auditPromises.push(logFieldUpdate(testCaseId, userId, field, oldTestCase[field], newTestCase[field]));
     }
   }
 

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, Plus, Users, FolderKanban } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Building2, Plus, Users, FolderKanban, UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,9 +16,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { CreateOrgDialog } from "@/components/organizations/create-org-dialog";
+import { UserMenu } from "@/components/layout/user-menu";
 import { trpc } from "@/lib/trpc";
 
 export default function SelectOrganizationPage() {
+  const { data: session } = useSession();
   const { data: organizations, isLoading } =
     trpc.organizations.getUserOrganizations.useQuery();
 
@@ -40,24 +43,40 @@ export default function SelectOrganizationPage() {
   const hasOrganizations = organizations && organizations.length > 0;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Select Organization
-            </h1>
-            <p className="text-muted-foreground">
-              Choose an organization to continue, or create a new one.
-            </p>
+    <div className="min-h-screen flex flex-col">
+      {/* Top bar with user menu */}
+      <div className="flex justify-end p-4">
+        {session?.user && (
+          <UserMenu user={session.user as { id: string; name?: string | null; email?: string | null; image?: string | null }} />
+        )}
+      </div>
+
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Select Organization
+              </h1>
+              <p className="text-muted-foreground">
+                Choose an organization to continue, or create a new one.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/onboarding">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Join Another
+                </Link>
+              </Button>
+              <CreateOrgDialog>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Organization
+                </Button>
+              </CreateOrgDialog>
+            </div>
           </div>
-          <CreateOrgDialog>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Organization
-            </Button>
-          </CreateOrgDialog>
-        </div>
 
         {hasOrganizations ? (
           <div className="grid gap-4">
@@ -118,6 +137,7 @@ export default function SelectOrganizationPage() {
             </CardContent>
           </Card>
         )}
+        </div>
       </div>
     </div>
   );

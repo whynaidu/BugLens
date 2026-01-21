@@ -15,7 +15,7 @@ export function RectangleShape({
   onChange,
   onDoubleClick,
   draggable,
-  hasBug = false,
+  hasTestCase = false,
 }: AnnotationShapeProps) {
   const shapeRef = useRef<Konva.Rect>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -99,8 +99,8 @@ export function RectangleShape({
           y={bounds.y}
           width={bounds.width}
           height={bounds.height}
-          stroke={hasBug ? "#22c55e" : annotation.stroke}
-          strokeWidth={hasBug ? 3 : annotation.strokeWidth}
+          stroke={hasTestCase ? "#22c55e" : annotation.stroke}
+          strokeWidth={hasTestCase ? 3 : annotation.strokeWidth}
           fill="transparent"
           draggable={draggable && isSelected}
           onClick={onSelect}
@@ -115,8 +115,8 @@ export function RectangleShape({
           shadowForStrokeEnabled={false}
           hitStrokeWidth={10} // Easier to click
         />
-        {/* Bug indicator badge */}
-        {hasBug && (
+        {/* Test case indicator badge */}
+        {hasTestCase && (
           <Group x={bounds.x + bounds.width - 8} y={bounds.y - 8}>
             <KonvaCircle
               radius={10}
@@ -125,7 +125,7 @@ export function RectangleShape({
               strokeWidth={2}
             />
             <Text
-              text="B"
+              text="T"
               fontSize={10}
               fontStyle="bold"
               fill="#ffffff"

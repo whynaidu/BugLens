@@ -16,6 +16,10 @@ import {
   resendInviteSchema,
   getMembersSchema,
   getPendingInvitesSchema,
+  createInviteLinkSchema,
+  acceptInviteCodeSchema,
+  revokeInviteLinkSchema,
+  getInviteLinksSchema,
 } from "@/lib/validations/member";
 import { sendInvitationEmail } from "../services/email";
 
@@ -190,8 +194,8 @@ export const membersRouter = createTRPCRouter({
         });
       }
 
-      // Verify the invitation is for this user's email
-      if (invitation.email.toLowerCase() !== ctx.user.email.toLowerCase()) {
+      // Verify the invitation is for this user's email (if email-based invite)
+      if (invitation.email && invitation.email.toLowerCase() !== ctx.user.email.toLowerCase()) {
         throw new TRPCError({
           code: "FORBIDDEN",
           message: "This invitation was sent to a different email address",
@@ -440,6 +444,13 @@ export const membersRouter = createTRPCRouter({
         });
       }
 
+      if (!invitation.email) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot resend email for invite link",
+        });
+      }
+
       // Generate new token and extend expiry
       const token = crypto.randomUUID();
       const expiresAt = new Date();
@@ -466,5 +477,151 @@ export const membersRouter = createTRPCRouter({
       });
 
       return { success: true };
+    }),
+
+  /**
+   * Create a shareable invite link (admin only)
+   */
+  createInviteLink: adminProcedure
+    .input(createInviteLinkSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { organizationId, role, maxUses, expiresInDays } = input;
+
+      const token = crypto.randomUUID();
+      const inviteCode = crypto.randomUUID().slice(0, 12);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+
+      const invitation = await ctx.db.invitation.create({
+        data: {
+          organizationId,
+          role,
+          token,
+          inviteCode,
+          maxUses,
+          expiresAt,
+        },
+      });
+
+      return invitation;
+    }),
+
+  /**
+   * Get active invite links for an organization (admin only)
+   */
+  getInviteLinks: adminProcedure
+    .input(getInviteLinksSchema)
+    .query(async ({ ctx, input }) => {
+      const inviteLinks = await ctx.db.invitation.findMany({
+        where: {
+          organizationId: input.organizationId,
+          inviteCode: { not: null },
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return inviteLinks;
+    }),
+
+  /**
+   * Revoke an invite link (admin only)
+   */
+  revokeInviteLink: adminProcedure
+    .input(revokeInviteLinkSchema)
+    .mutation(async ({ ctx, input }) => {
+      const invitation = await ctx.db.invitation.findUnique({
+        where: { id: input.invitationId },
+      });
+
+      if (
+        !invitation ||
+        invitation.organizationId !== input.organizationId ||
+        !invitation.inviteCode
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invite link not found",
+        });
+      }
+
+      await ctx.db.invitation.delete({
+        where: { id: input.invitationId },
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Accept an invite via invite code
+   */
+  acceptInviteCode: protectedProcedure
+    .input(acceptInviteCodeSchema)
+    .mutation(async ({ ctx, input }) => {
+      const invitation = await ctx.db.invitation.findUnique({
+        where: { inviteCode: input.code },
+        include: { organization: true },
+      });
+
+      if (!invitation) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invalid invite code",
+        });
+      }
+
+      if (invitation.expiresAt < new Date()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This invite link has expired",
+        });
+      }
+
+      if (invitation.maxUses && invitation.usedCount >= invitation.maxUses) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This invite link has reached its maximum uses",
+        });
+      }
+
+      // Check if user is already a member
+      const existingMember = await ctx.db.member.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: ctx.user.id,
+            organizationId: invitation.organizationId,
+          },
+        },
+      });
+
+      if (existingMember) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "You are already a member of this organization",
+        });
+      }
+
+      // Create membership and update invite count in transaction
+      const member = await ctx.db.$transaction(async (tx) => {
+        const newMember = await tx.member.create({
+          data: {
+            userId: ctx.user.id,
+            organizationId: invitation.organizationId,
+            role: invitation.role,
+          },
+        });
+
+        await tx.invitation.update({
+          where: { id: invitation.id },
+          data: { usedCount: { increment: 1 } },
+        });
+
+        return newMember;
+      });
+
+      return {
+        member,
+        organization: invitation.organization,
+      };
     }),
 });

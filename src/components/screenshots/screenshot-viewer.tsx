@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   ZoomIn,
@@ -14,6 +14,8 @@ import {
   ArrowRight,
   Pencil,
   Loader2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -112,6 +114,10 @@ export function ScreenshotViewer({
     setZoom,
     setPan: _setPan,
     resetView,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useAnnotationStore();
 
   // setPan will be used when implementing drag-to-pan functionality
@@ -163,29 +169,9 @@ export function ScreenshotViewer({
     return denormalized;
   }, []);
 
-  // Track which annotation IDs we've synced to detect changes
-  const lastSyncedIdsRef = useRef<string>("");
-
-  // Sync annotations from props to store when they change
-  useEffect(() => {
-    if (imageSize.width > 0 && imageSize.height > 0) {
-      // Create a key from annotation IDs to detect changes
-      const currentIds = initialAnnotations.map(a => a.id).sort().join(",");
-
-      // Only re-sync if the annotations have changed (different IDs)
-      if (currentIds !== lastSyncedIdsRef.current) {
-        lastSyncedIdsRef.current = currentIds;
-
-        // Denormalize initial annotations from 0-1 to screen coordinates
-        const scale = Math.min(containerSize.width / imageSize.width, containerSize.height / imageSize.height, 1) * zoom;
-        const denormalized = initialAnnotations.map((a) =>
-          denormalizeAnnotation(a, imageSize.width, imageSize.height, scale, panX, panY)
-        );
-        setAnnotations(denormalized);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageSize.width, imageSize.height, initialAnnotations]); // Re-run when annotations change
+  // Track annotation state to detect changes (IDs + bug relationships)
+  const lastSyncedKeyRef = useRef<string>("");
+  const lastZoomRef = useRef<number>(zoom);
 
   // Handle container resize
   useEffect(() => {
@@ -213,6 +199,26 @@ export function ScreenshotViewer({
       ) {
         return;
       }
+
+      // Handle Ctrl/Cmd shortcuts
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Undo: Ctrl+Z (or Cmd+Z on Mac)
+      if (isCtrlOrCmd && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+
+      // Redo: Ctrl+Shift+Z or Ctrl+Y (or Cmd+Shift+Z / Cmd+Y on Mac)
+      if (isCtrlOrCmd && (e.key === "y" || (e.key === "z" && e.shiftKey) || (e.key === "Z" && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // Don't process tool shortcuts if Ctrl/Cmd is held
+      if (isCtrlOrCmd) return;
 
       switch (e.key) {
         case "v":
@@ -279,6 +285,8 @@ export function ScreenshotViewer({
     resetView,
     zoom,
     setZoom,
+    undo,
+    redo,
   ]);
 
   // Calculate scale to fit image in container
@@ -291,6 +299,52 @@ export function ScreenshotViewer({
 
   const baseScale = getScale();
   const totalScale = baseScale * zoom;
+
+  // Calculate center offset to center the image in the container
+  const centerOffset = useMemo(() => {
+    if (!imageSize.width || !imageSize.height) return { x: 0, y: 0 };
+    const scaledWidth = imageSize.width * totalScale;
+    const scaledHeight = imageSize.height * totalScale;
+    return {
+      x: (containerSize.width - scaledWidth) / 2,
+      y: (containerSize.height - scaledHeight) / 2,
+    };
+  }, [containerSize, imageSize, totalScale]);
+
+  // Sync annotations from props to store when they change OR when zoom changes
+  useEffect(() => {
+    if (imageSize.width > 0 && imageSize.height > 0) {
+      // Create a comprehensive key that includes annotation IDs AND their test case relationships
+      // This ensures we re-sync when test cases are linked/unlinked
+      const currentKey = initialAnnotations
+        .map(a => {
+          const testCaseIds = a.testCases?.map(tc => tc.id).sort().join(":") || "";
+          return `${a.id}[${testCaseIds}]`;
+        })
+        .sort()
+        .join(",");
+
+      // Re-sync if annotations changed OR zoom changed
+      const zoomChanged = lastZoomRef.current !== zoom;
+      const annotationsChanged = currentKey !== lastSyncedKeyRef.current;
+
+      if (annotationsChanged || zoomChanged) {
+        lastSyncedKeyRef.current = currentKey;
+        lastZoomRef.current = zoom;
+
+        // Calculate the actual center offset for current zoom
+        const offsetX = centerOffset.x + panX;
+        const offsetY = centerOffset.y + panY;
+
+        // Denormalize initial annotations from 0-1 to screen coordinates
+        const denormalized = initialAnnotations.map((a) =>
+          denormalizeAnnotation(a, imageSize.width, imageSize.height, totalScale, offsetX, offsetY)
+        );
+        setAnnotations(denormalized);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageSize.width, imageSize.height, initialAnnotations, zoom, totalScale, containerSize, panX, panY, centerOffset, denormalizeAnnotation, setAnnotations]);
 
   // Handle mouse events for drawing
   // Using unknown type to avoid importing Konva types directly
@@ -356,22 +410,30 @@ export function ScreenshotViewer({
     const scaledWidth = imageSize.width * totalScale;
     const scaledHeight = imageSize.height * totalScale;
 
+    // Calculate center offset (same as used for image positioning)
+    const offsetX = centerOffset.x + panX;
+    const offsetY = centerOffset.y + panY;
+
     // Convert from screen position to position relative to scaled image
-    const relX = (screenX - panX) / scaledWidth;
-    const relY = (screenY - panY) / scaledHeight;
+    const relX = (screenX - offsetX) / scaledWidth;
+    const relY = (screenY - offsetY) / scaledHeight;
 
     // Clamp to 0-1 range
     return {
       x: Math.max(0, Math.min(1, relX)),
       y: Math.max(0, Math.min(1, relY)),
     };
-  }, [imageSize, totalScale, panX, panY]);
+  }, [imageSize, totalScale, panX, panY, centerOffset]);
 
   // Normalize an entire annotation for database storage
   const normalizeAnnotation = useCallback((annotation: Annotation): NormalizedAnnotation => {
     const { x: normX, y: normY } = normalizeCoordinate(annotation.x, annotation.y);
     const scaledWidth = imageSize.width * totalScale;
     const scaledHeight = imageSize.height * totalScale;
+
+    // Calculate center offset (same as used for image positioning)
+    const offsetX = centerOffset.x + panX;
+    const offsetY = centerOffset.y + panY;
 
     const normalized: NormalizedAnnotation = {
       type: annotation.type,
@@ -395,16 +457,16 @@ export function ScreenshotViewer({
       normalized.points = annotation.points.map((val, idx) => {
         if (idx % 2 === 0) {
           // X coordinate
-          return Math.max(0, Math.min(1, (val - panX) / scaledWidth));
+          return Math.max(0, Math.min(1, (val - offsetX) / scaledWidth));
         } else {
           // Y coordinate
-          return Math.max(0, Math.min(1, (val - panY) / scaledHeight));
+          return Math.max(0, Math.min(1, (val - offsetY) / scaledHeight));
         }
       });
     }
 
     return normalized;
-  }, [normalizeCoordinate, imageSize, totalScale, panX, panY]);
+  }, [normalizeCoordinate, imageSize, totalScale, panX, panY, centerOffset]);
 
   const handleMouseUp = useCallback(async () => {
     if (!isDrawing) return;
@@ -433,6 +495,54 @@ export function ScreenshotViewer({
     const newZoom = event.evt.deltaY > 0 ? zoom / scaleBy : zoom * scaleBy;
     setZoom(newZoom);
   }, [zoom, setZoom]);
+
+  // Handle annotation drag/move - normalizes coordinates and updates store + calls parent
+  const handleAnnotationDragUpdate = useCallback((id: string, updates: Partial<Annotation>) => {
+    // Update local store immediately for visual feedback
+    const { updateAnnotation } = useAnnotationStore.getState();
+    updateAnnotation(id, updates);
+
+    // Normalize coordinates for the parent callback
+    if (onAnnotationUpdate && imageSize.width > 0 && imageSize.height > 0) {
+      const scaledWidth = imageSize.width * totalScale;
+      const scaledHeight = imageSize.height * totalScale;
+      const offsetX = centerOffset.x + panX;
+      const offsetY = centerOffset.y + panY;
+
+      const normalizedUpdates: Partial<NormalizedAnnotation> = {};
+
+      // Normalize x, y if present
+      if (updates.x !== undefined) {
+        normalizedUpdates.x = Math.max(0, Math.min(1, (updates.x - offsetX) / scaledWidth));
+      }
+      if (updates.y !== undefined) {
+        normalizedUpdates.y = Math.max(0, Math.min(1, (updates.y - offsetY) / scaledHeight));
+      }
+
+      // Normalize width/height if present (clamp to 0-1 range)
+      if (updates.width !== undefined) {
+        normalizedUpdates.width = Math.min(1, Math.abs(updates.width) / scaledWidth);
+      }
+      if (updates.height !== undefined) {
+        normalizedUpdates.height = Math.min(1, Math.abs(updates.height) / scaledHeight);
+      }
+
+      // Normalize points if present (for arrows and freehand)
+      if (updates.points && updates.points.length > 0) {
+        normalizedUpdates.points = updates.points.map((val, idx) => {
+          if (idx % 2 === 0) {
+            // X coordinate
+            return Math.max(0, Math.min(1, (val - offsetX) / scaledWidth));
+          } else {
+            // Y coordinate
+            return Math.max(0, Math.min(1, (val - offsetY) / scaledHeight));
+          }
+        });
+      }
+
+      onAnnotationUpdate(id, normalizedUpdates);
+    }
+  }, [onAnnotationUpdate, imageSize, totalScale, centerOffset, panX, panY]);
 
   const tools: { tool: AnnotationTool; icon: React.ReactNode; label: string; shortcut: string }[] = [
     { tool: "select", icon: <MousePointer2 className="h-4 w-4" />, label: "Select", shortcut: "V" },
@@ -483,6 +593,44 @@ export function ScreenshotViewer({
               />
             ))}
           </div>
+
+          <div className="w-px h-6 bg-border mx-2" />
+
+          {/* Undo/Redo */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={undo}
+                  disabled={!canUndo()}
+                >
+                  <Undo2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Undo (Ctrl+Z)</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={redo}
+                  disabled={!canRedo()}
+                >
+                  <Redo2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Redo (Ctrl+Shift+Z)</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         <div className="flex items-center gap-2">
@@ -563,8 +711,8 @@ export function ScreenshotViewer({
           containerSize={containerSize}
           image={image}
           imageSize={imageSize}
-          panX={panX}
-          panY={panY}
+          panX={centerOffset.x + panX}
+          panY={centerOffset.y + panY}
           totalScale={totalScale}
           annotations={annotations}
           drawingAnnotation={drawingAnnotation}
@@ -574,7 +722,7 @@ export function ScreenshotViewer({
           onMouseUp={handleMouseUp}
           onWheel={handleWheel}
           onSelectAnnotation={selectAnnotation}
-          onAnnotationUpdate={onAnnotationUpdate}
+          onAnnotationUpdate={handleAnnotationDragUpdate}
           onAnnotationClick={onAnnotationSelect}
         />
       </div>

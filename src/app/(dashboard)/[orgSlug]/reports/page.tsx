@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { BarChart3, PieChart, TrendingUp, Calendar, Download } from "lucide-react";
+import { BarChart3, PieChart, TrendingUp, Calendar, Download, CheckSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,11 +36,12 @@ export default function ReportsPage() {
     );
   }
 
-  // Calculate stats from bugStats
+  // Calculate stats from testCaseStats
   const totalProjects = projects?.length || 0;
-  const totalBugs = projects?.reduce((acc, p) => acc + (p.bugStats?.total || 0), 0) || 0;
-  const openBugs = projects?.reduce((acc, p) => acc + (p.bugStats?.open || 0), 0) || 0;
-  const resolvedBugs = projects?.reduce((acc, p) => acc + (p.bugStats?.resolved || 0), 0) || 0;
+  const totalTestCases = projects?.reduce((acc, p) => acc + (p.testCaseStats?.total || 0), 0) || 0;
+  const passedTestCases = projects?.reduce((acc, p) => acc + (p.testCaseStats?.passed || 0), 0) || 0;
+  const failedTestCases = projects?.reduce((acc, p) => acc + (p.testCaseStats?.failed || 0), 0) || 0;
+  const pendingTestCases = projects?.reduce((acc, p) => acc + (p.testCaseStats?.pending || 0), 0) || 0;
 
   return (
     <div className="container py-8">
@@ -74,11 +75,11 @@ export default function ReportsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Bugs</CardTitle>
-            <PieChart className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Test Cases</CardTitle>
+            <CheckSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalBugs}</div>
+            <div className="text-2xl font-bold">{totalTestCases}</div>
             <p className="text-xs text-muted-foreground">
               Across all projects
             </p>
@@ -87,26 +88,26 @@ export default function ReportsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Open Bugs</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Passed</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{openBugs}</div>
+            <div className="text-2xl font-bold text-green-500">{passedTestCases}</div>
             <p className="text-xs text-muted-foreground">
-              Requiring attention
+              Test cases passed
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Resolved</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Failed</CardTitle>
+            <Calendar className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">{resolvedBugs}</div>
+            <div className="text-2xl font-bold text-red-500">{failedTestCases}</div>
             <p className="text-xs text-muted-foreground">
-              Bugs fixed
+              Test cases failed
             </p>
           </CardContent>
         </Card>
@@ -116,20 +117,20 @@ export default function ReportsPage() {
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>Project Summary</CardTitle>
-          <CardDescription>Bug distribution across projects</CardDescription>
+          <CardDescription>Test case distribution across projects</CardDescription>
         </CardHeader>
         <CardContent>
           {projects && projects.length > 0 ? (
             <div className="space-y-4">
               {projects.map((project) => {
-                const bugCount = project.bugStats?.total || 0;
-                const percentage = totalBugs > 0 ? (bugCount / totalBugs) * 100 : 0;
+                const testCaseCount = project.testCaseStats?.total || 0;
+                const percentage = totalTestCases > 0 ? (testCaseCount / totalTestCases) * 100 : 0;
 
                 return (
                   <div key={project.id} className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">{project.name}</span>
-                      <span className="text-muted-foreground">{bugCount} bugs</span>
+                      <span className="text-muted-foreground">{testCaseCount} test cases</span>
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
@@ -146,6 +147,46 @@ export default function ReportsPage() {
               No projects yet. Create a project to see reports.
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Pass Rate Summary */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>Pass Rate Summary</CardTitle>
+          <CardDescription>Overall test execution status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Passed</span>
+              <span className="text-sm text-green-500 font-medium">{passedTestCases}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Failed</span>
+              <span className="text-sm text-red-500 font-medium">{failedTestCases}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Pending</span>
+              <span className="text-sm text-yellow-500 font-medium">{pendingTestCases}</span>
+            </div>
+            {totalTestCases > 0 && (
+              <div className="pt-4 border-t">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">Pass Rate</span>
+                  <span className="text-sm font-medium">
+                    {Math.round((passedTestCases / totalTestCases) * 100)}%
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 transition-all"
+                    style={{ width: `${(passedTestCases / totalTestCases) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

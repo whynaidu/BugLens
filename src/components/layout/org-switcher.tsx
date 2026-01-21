@@ -43,7 +43,7 @@ export function OrgSwitcher({ className }: OrgSwitcherProps) {
   if (isLoading) {
     return (
       <div className={className}>
-        <Skeleton className="h-10 w-[200px]" />
+        <Skeleton className="h-10 w-full" />
       </div>
     );
   }
@@ -74,7 +74,7 @@ export function OrgSwitcher({ className }: OrgSwitcherProps) {
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-[240px]" align="start">
+        <DropdownMenuContent className="w-[200px] sm:w-[240px]" align="start">
           <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>

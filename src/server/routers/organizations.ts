@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { Role, BugStatus } from "@prisma/client";
+import { Role, TestCaseStatus } from "@prisma/client";
 import { z } from "zod";
 import {
   createTRPCRouter,
@@ -13,9 +13,66 @@ import {
   getOrgBySlugSchema,
   deleteOrgSchema,
   generateSlug,
+  checkSlugSchema,
+  searchOrganizationsSchema,
 } from "@/lib/validations/organization";
 
 export const organizationsRouter = createTRPCRouter({
+  /**
+   * Check if an organization slug is available
+   */
+  checkSlugAvailability: protectedProcedure
+    .input(checkSlugSchema)
+    .query(async ({ ctx, input }) => {
+      const existing = await ctx.db.organization.findUnique({
+        where: { slug: input.slug },
+      });
+
+      return { available: !existing };
+    }),
+
+  /**
+   * Search for organizations by name or slug (for join request flow)
+   * Excludes organizations the user is already a member of
+   */
+  searchPublic: protectedProcedure
+    .input(searchOrganizationsSchema)
+    .query(async ({ ctx, input }) => {
+      // Get user's current org memberships
+      const userMemberships = await ctx.db.member.findMany({
+        where: { userId: ctx.user.id },
+        select: { organizationId: true },
+      });
+
+      const memberOrgIds = userMemberships.map((m) => m.organizationId);
+
+      // Search organizations excluding user's current orgs
+      const organizations = await ctx.db.organization.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { name: { contains: input.query, mode: "insensitive" } },
+                { slug: { contains: input.query, mode: "insensitive" } },
+              ],
+            },
+            { id: { notIn: memberOrgIds } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          _count: { select: { members: true } },
+        },
+        take: 10,
+        orderBy: { name: "asc" },
+      });
+
+      return organizations;
+    }),
+
   /**
    * Create a new organization
    * The creator becomes an ADMIN member automatically
@@ -24,21 +81,18 @@ export const organizationsRouter = createTRPCRouter({
     .input(createOrgSchema)
     .mutation(async ({ ctx, input }) => {
       const { name, logoUrl } = input;
-      let slug = input.slug || generateSlug(name);
+      const slug = input.slug || generateSlug(name);
 
-      // Ensure slug is unique
-      let slugExists = await ctx.db.organization.findUnique({
+      // Check if slug is taken
+      const existing = await ctx.db.organization.findUnique({
         where: { slug },
       });
 
-      let counter = 1;
-      const baseSlug = slug;
-      while (slugExists) {
-        slug = `${baseSlug}-${counter}`;
-        slugExists = await ctx.db.organization.findUnique({
-          where: { slug },
+      if (existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This URL is already taken. Please choose a different one.",
         });
-        counter++;
       }
 
       // Create organization and add creator as admin in a transaction
@@ -256,39 +310,34 @@ export const organizationsRouter = createTRPCRouter({
         });
 
         for (const project of projects) {
-          // Delete flows and screenshots
-          const flows = await tx.flow.findMany({
+          // Delete modules and test cases
+          const modules = await tx.module.findMany({
             where: { projectId: project.id },
             select: { id: true },
           });
 
-          for (const flow of flows) {
-            await tx.annotation.deleteMany({
-              where: { screenshot: { flowId: flow.id } },
+          for (const module of modules) {
+            const testCases = await tx.testCase.findMany({
+              where: { moduleId: module.id },
+              select: { id: true },
             });
-            await tx.screenshot.deleteMany({
-              where: { flowId: flow.id },
-            });
+
+            for (const testCase of testCases) {
+              await tx.annotation.deleteMany({
+                where: { screenshot: { testCaseId: testCase.id } },
+              });
+              await tx.screenshot.deleteMany({
+                where: { testCaseId: testCase.id },
+              });
+              await tx.comment.deleteMany({ where: { testCaseId: testCase.id } });
+              await tx.attachment.deleteMany({ where: { testCaseId: testCase.id } });
+              await tx.auditLog.deleteMany({ where: { testCaseId: testCase.id } });
+            }
+
+            await tx.testCase.deleteMany({ where: { moduleId: module.id } });
           }
 
-          await tx.flow.deleteMany({
-            where: { projectId: project.id },
-          });
-
-          // Delete bugs and related
-          const bugs = await tx.bug.findMany({
-            where: { projectId: project.id },
-            select: { id: true },
-          });
-
-          for (const bug of bugs) {
-            await tx.comment.deleteMany({ where: { bugId: bug.id } });
-            await tx.attachment.deleteMany({ where: { bugId: bug.id } });
-            await tx.auditLog.deleteMany({ where: { bugId: bug.id } });
-            // Note: Annotation-Bug links are cleared automatically via implicit many-to-many
-          }
-
-          await tx.bug.deleteMany({
+          await tx.module.deleteMany({
             where: { projectId: project.id },
           });
         }
@@ -318,11 +367,11 @@ export const organizationsRouter = createTRPCRouter({
       const [
         totalProjects,
         totalMembers,
-        totalBugs,
-        openBugs,
-        inProgressBugs,
-        resolvedBugs,
-        recentBugs,
+        totalTestCases,
+        passedTestCases,
+        failedTestCases,
+        pendingTestCases,
+        recentTestCases,
         recentActivity,
       ] = await Promise.all([
         ctx.db.project.count({
@@ -331,29 +380,29 @@ export const organizationsRouter = createTRPCRouter({
         ctx.db.member.count({
           where: { organizationId },
         }),
-        ctx.db.bug.count({
-          where: { project: { organizationId } },
+        ctx.db.testCase.count({
+          where: { module: { project: { organizationId } } },
         }),
-        ctx.db.bug.count({
+        ctx.db.testCase.count({
           where: {
-            project: { organizationId },
-            status: BugStatus.OPEN,
+            module: { project: { organizationId } },
+            status: TestCaseStatus.PASSED,
           },
         }),
-        ctx.db.bug.count({
+        ctx.db.testCase.count({
           where: {
-            project: { organizationId },
-            status: BugStatus.IN_PROGRESS,
+            module: { project: { organizationId } },
+            status: TestCaseStatus.FAILED,
           },
         }),
-        ctx.db.bug.count({
+        ctx.db.testCase.count({
           where: {
-            project: { organizationId },
-            status: { in: [BugStatus.RESOLVED, BugStatus.CLOSED] },
+            module: { project: { organizationId } },
+            status: { in: [TestCaseStatus.PENDING, TestCaseStatus.DRAFT] },
           },
         }),
-        ctx.db.bug.findMany({
-          where: { project: { organizationId } },
+        ctx.db.testCase.findMany({
+          where: { module: { project: { organizationId } } },
           take: 5,
           orderBy: { createdAt: "desc" },
           select: {
@@ -362,8 +411,13 @@ export const organizationsRouter = createTRPCRouter({
             status: true,
             severity: true,
             createdAt: true,
-            project: {
-              select: { name: true, slug: true },
+            module: {
+              select: {
+                name: true,
+                project: {
+                  select: { name: true, slug: true },
+                },
+              },
             },
             creator: {
               select: { name: true, email: true, avatarUrl: true },
@@ -374,7 +428,7 @@ export const organizationsRouter = createTRPCRouter({
           },
         }),
         ctx.db.auditLog.findMany({
-          where: { bug: { project: { organizationId } } },
+          where: { testCase: { module: { project: { organizationId } } } },
           take: 10,
           orderBy: { createdAt: "desc" },
           select: {
@@ -385,7 +439,7 @@ export const organizationsRouter = createTRPCRouter({
             user: {
               select: { name: true, email: true, avatarUrl: true },
             },
-            bug: {
+            testCase: {
               select: { id: true, title: true },
             },
           },
@@ -396,12 +450,12 @@ export const organizationsRouter = createTRPCRouter({
         stats: {
           totalProjects,
           totalMembers,
-          totalBugs,
-          openBugs,
-          inProgressBugs,
-          resolvedBugs,
+          totalTestCases,
+          passedTestCases,
+          failedTestCases,
+          pendingTestCases,
         },
-        recentBugs,
+        recentTestCases,
         recentActivity,
       };
     }),

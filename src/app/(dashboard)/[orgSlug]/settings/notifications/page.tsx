@@ -131,9 +131,9 @@ export default function NotificationSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="container max-w-4xl py-8 space-y-6">
+      <div className="container max-w-4xl px-4 py-4 sm:py-8 space-y-6">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
+        <Skeleton className="h-4 w-full sm:w-96" />
         <div className="space-y-4">
           {[...Array(3)].map((_, i) => (
             <Skeleton key={i} className="h-48 w-full" />
@@ -144,15 +144,15 @@ export default function NotificationSettingsPage() {
   }
 
   return (
-    <div className="container max-w-4xl py-8">
+    <div className="container max-w-4xl px-4 py-4 sm:py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Settings2 className="h-6 w-6" />
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Settings2 className="h-5 w-5 sm:h-6 sm:w-6" />
             Notification Settings
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm sm:text-base text-muted-foreground">
             Choose how and when you want to be notified
           </p>
         </div>
@@ -161,6 +161,7 @@ export default function NotificationSettingsPage() {
           size="sm"
           onClick={() => resetPreferences.mutate({})}
           disabled={resetPreferences.isPending}
+          className="w-full sm:w-auto"
         >
           Reset to defaults
         </Button>
@@ -175,7 +176,7 @@ export default function NotificationSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
             {channels.map((channel) => {
               const Icon = channel.icon;
               const isChannelConfigured = channel.id === "IN_APP" || channel.id === "EMAIL";
@@ -227,7 +228,7 @@ export default function NotificationSettingsPage() {
                     {event.description}
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
                   {channels.map((channel) => {
                     const Icon = channel.icon;
                     const enabled = isEnabled(event.id, channel.id);

@@ -13,7 +13,7 @@ export interface AnnotationShapeProps {
   onChange: (updates: Partial<Annotation>) => void;
   onDoubleClick?: () => void;
   draggable: boolean;
-  hasBug?: boolean;
+  hasTestCase?: boolean;
 }
 
 export function AnnotationShape(props: AnnotationShapeProps) {

@@ -14,57 +14,22 @@ import {
   updateScreenshotSchema,
   deleteScreenshotSchema,
   reorderScreenshotsSchema,
-  getScreenshotsByFlowSchema,
+  getScreenshotsByTestCaseSchema,
   getScreenshotByIdSchema,
 } from "@/lib/validations/screenshot";
 
 /**
- * Helper to verify user has access to a flow
+ * Helper to verify user has access to a test case
  */
-async function verifyFlowAccess(
+async function verifyTestCaseAccess(
   db: PrismaClient,
-  flowId: string,
+  testCaseId: string,
   userId: string
 ) {
-  const flow = await db.flow.findUnique({
-    where: { id: flowId },
+  const testCase = await db.testCase.findUnique({
+    where: { id: testCaseId },
     include: {
-      project: {
-        include: {
-          organization: {
-            include: {
-              members: {
-                where: { userId },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!flow || flow.project.organization.members.length === 0) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Flow not found",
-    });
-  }
-
-  return flow;
-}
-
-/**
- * Helper to verify user has access to a screenshot
- */
-async function verifyScreenshotAccess(
-  db: PrismaClient,
-  screenshotId: string,
-  userId: string
-) {
-  const screenshot = await db.screenshot.findUnique({
-    where: { id: screenshotId },
-    include: {
-      flow: {
+      module: {
         include: {
           project: {
             include: {
@@ -82,7 +47,50 @@ async function verifyScreenshotAccess(
     },
   });
 
-  if (!screenshot || screenshot.flow.project.organization.members.length === 0) {
+  if (!testCase || testCase.module.project.organization.members.length === 0) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Test case not found",
+    });
+  }
+
+  return testCase;
+}
+
+/**
+ * Helper to verify user has access to a screenshot
+ */
+async function verifyScreenshotAccess(
+  db: PrismaClient,
+  screenshotId: string,
+  userId: string
+) {
+  const screenshot = await db.screenshot.findUnique({
+    where: { id: screenshotId },
+    include: {
+      testCase: {
+        include: {
+          module: {
+            include: {
+              project: {
+                include: {
+                  organization: {
+                    include: {
+                      members: {
+                        where: { userId },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!screenshot || screenshot.testCase.module.project.organization.members.length === 0) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Screenshot not found",
@@ -99,10 +107,10 @@ export const screenshotsRouter = createTRPCRouter({
   getUploadUrl: protectedProcedure
     .input(getUploadUrlSchema)
     .mutation(async ({ ctx, input }) => {
-      const { flowId, fileName, contentType } = input;
+      const { testCaseId, fileName, contentType } = input;
 
-      // Verify access to the flow
-      const flow = await verifyFlowAccess(ctx.db, flowId, ctx.session.user.id);
+      // Verify access to the test case
+      const testCase = await verifyTestCaseAccess(ctx.db, testCaseId, ctx.session.user.id);
 
       // Generate a unique screenshot ID for the key
       const screenshotId = crypto.randomUUID();
@@ -113,9 +121,9 @@ export const screenshotsRouter = createTRPCRouter({
 
       // Generate the S3 key
       const s3Key = generateS3Key(
-        flow.project.organizationId,
-        flow.projectId,
-        flowId,
+        testCase.module.project.organizationId,
+        testCase.module.projectId,
+        testCase.moduleId,
         screenshotId,
         originalFileName
       );
@@ -137,15 +145,15 @@ export const screenshotsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createScreenshotSchema)
     .mutation(async ({ ctx, input }) => {
-      const { flowId, s3Key, title, description, width, height, fileSize, mimeType } =
+      const { testCaseId, s3Key, title, description, width, height, fileSize, mimeType } =
         input;
 
-      // Verify access to the flow
-      const flow = await verifyFlowAccess(ctx.db, flowId, ctx.session.user.id);
+      // Verify access to the test case
+      const testCase = await verifyTestCaseAccess(ctx.db, testCaseId, ctx.session.user.id);
 
-      // Get the highest order number for this flow
+      // Get the highest order number for this test case
       const lastScreenshot = await ctx.db.screenshot.findFirst({
-        where: { flowId },
+        where: { testCaseId },
         orderBy: { order: "desc" },
         select: { order: true },
       });
@@ -159,7 +167,7 @@ export const screenshotsRouter = createTRPCRouter({
 
       const screenshot = await ctx.db.screenshot.create({
         data: {
-          flowId,
+          testCaseId,
           s3Key,
           originalUrl,
           thumbnailUrl: getCdnUrl(thumbnailKey),
@@ -179,7 +187,8 @@ export const screenshotsRouter = createTRPCRouter({
 
       return {
         ...screenshot,
-        project: flow.project,
+        module: testCase.module,
+        project: testCase.module.project,
       };
     }),
 
@@ -245,15 +254,15 @@ export const screenshotsRouter = createTRPCRouter({
     }),
 
   /**
-   * Reorder screenshots within a flow
+   * Reorder screenshots within a test case
    */
   reorder: protectedProcedure
     .input(reorderScreenshotsSchema)
     .mutation(async ({ ctx, input }) => {
-      const { flowId, screenshotIds } = input;
+      const { testCaseId, screenshotIds } = input;
 
-      // Verify access to the flow
-      await verifyFlowAccess(ctx.db, flowId, ctx.session.user.id);
+      // Verify access to the test case
+      await verifyTestCaseAccess(ctx.db, testCaseId, ctx.session.user.id);
 
       // Update order for each screenshot
       await ctx.db.$transaction(
@@ -269,18 +278,18 @@ export const screenshotsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get all screenshots for a flow
+   * Get all screenshots for a test case
    */
-  getByFlow: protectedProcedure
-    .input(getScreenshotsByFlowSchema)
+  getByTestCase: protectedProcedure
+    .input(getScreenshotsByTestCaseSchema)
     .query(async ({ ctx, input }) => {
-      const { flowId } = input;
+      const { testCaseId } = input;
 
-      // Verify access to the flow
-      await verifyFlowAccess(ctx.db, flowId, ctx.session.user.id);
+      // Verify access to the test case
+      await verifyTestCaseAccess(ctx.db, testCaseId, ctx.session.user.id);
 
       const screenshots = await ctx.db.screenshot.findMany({
-        where: { flowId },
+        where: { testCaseId },
         orderBy: { order: "asc" },
         include: {
           _count: {
@@ -321,11 +330,11 @@ export const screenshotsRouter = createTRPCRouter({
         ctx.session.user.id
       );
 
-      // Get annotations with bugs info (many-to-many relationship)
+      // Get annotations with test cases info (many-to-many relationship)
       const annotations = await ctx.db.annotation.findMany({
         where: { screenshotId },
         include: {
-          bugs: {
+          testCases: {
             select: {
               id: true,
               title: true,

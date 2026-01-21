@@ -155,9 +155,9 @@ export default function IntegrationsPage() {
 
   if (isLoading || !organizationId) {
     return (
-      <div className="container max-w-4xl py-8 space-y-6">
+      <div className="container max-w-4xl px-4 py-4 sm:py-8 space-y-6">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
+        <Skeleton className="h-4 w-full sm:w-96" />
         <div className="space-y-4">
           {[...Array(2)].map((_, i) => (
             <Skeleton key={i} className="h-64 w-full" />
@@ -168,11 +168,11 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="container max-w-4xl py-8">
+    <div className="container max-w-4xl px-4 py-4 sm:py-8">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Integrations</h1>
-        <p className="text-muted-foreground">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold">Integrations</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">
           Connect BugLens with your team&apos;s communication tools
         </p>
       </div>
@@ -181,20 +181,20 @@ export default function IntegrationsPage() {
         {/* Slack Integration */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-[#4A154B]/10">
-                  <Slack className="h-6 w-6 text-[#4A154B]" />
+                <div className="p-2 rounded-lg bg-[#4A154B]/10 flex-shrink-0">
+                  <Slack className="h-5 w-5 sm:h-6 sm:w-6 text-[#4A154B]" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg">Slack</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Slack</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
                     Post notifications to Slack channels
                   </CardDescription>
                 </div>
               </div>
               {slackIntegration && (
-                <Badge variant={slackIntegration.isActive ? "default" : "secondary"}>
+                <Badge variant={slackIntegration.isActive ? "default" : "secondary"} className="w-fit">
                   {slackIntegration.isActive ? "Connected" : "Disabled"}
                 </Badge>
               )}
@@ -281,19 +281,21 @@ export default function IntegrationsPage() {
           </CardContent>
           <CardFooter className="border-t pt-4">
             {slackIntegration ? (
-              <div className="flex gap-2 w-full">
+              <div className="flex flex-wrap gap-2 w-full">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleTestSlack}
                   disabled={testSlackConnection.isPending}
+                  className="text-xs sm:text-sm"
                 >
                   {testSlackConnection.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <PlayCircle className="h-4 w-4 mr-2" />
                   )}
-                  Test Connection
+                  <span className="hidden sm:inline">Test Connection</span>
+                  <span className="sm:hidden">Test</span>
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -333,20 +335,20 @@ export default function IntegrationsPage() {
         {/* Teams Integration */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-[#5558AF]/10">
-                  <MessageSquare className="h-6 w-6 text-[#5558AF]" />
+                <div className="p-2 rounded-lg bg-[#5558AF]/10 flex-shrink-0">
+                  <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6 text-[#5558AF]" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg">Microsoft Teams</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Microsoft Teams</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
                     Post notifications via incoming webhook
                   </CardDescription>
                 </div>
               </div>
               {teamsIntegration && (
-                <Badge variant={teamsIntegration.isActive ? "default" : "secondary"}>
+                <Badge variant={teamsIntegration.isActive ? "default" : "secondary"} className="w-fit">
                   {teamsIntegration.isActive ? "Connected" : "Disabled"}
                 </Badge>
               )}
@@ -433,19 +435,21 @@ export default function IntegrationsPage() {
           </CardContent>
           <CardFooter className="border-t pt-4">
             {teamsIntegration ? (
-              <div className="flex gap-2 w-full">
+              <div className="flex flex-wrap gap-2 w-full">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleTestTeams}
                   disabled={testTeamsConnection.isPending}
+                  className="text-xs sm:text-sm"
                 >
                   {testTeamsConnection.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <PlayCircle className="h-4 w-4 mr-2" />
                   )}
-                  Test Connection
+                  <span className="hidden sm:inline">Test Connection</span>
+                  <span className="sm:hidden">Test</span>
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>

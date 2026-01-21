@@ -3,8 +3,8 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import {
   FolderKanban,
-  Bug,
-  AlertCircle,
+  CheckSquare,
+  XCircle,
   Clock,
   CheckCircle,
   ArrowRight,
@@ -15,7 +15,7 @@ import {
 
 import { auth } from "@/server/auth";
 import { db } from "@/server/db";
-import { BugStatus } from "@prisma/client";
+import { TestCaseStatus } from "@prisma/client";
 import {
   Card,
   CardContent,
@@ -40,12 +40,12 @@ interface ProjectPageProps {
 }
 
 const statusColors: Record<string, string> = {
-  OPEN: "bg-red-500",
-  IN_PROGRESS: "bg-yellow-500",
-  IN_REVIEW: "bg-blue-500",
-  RESOLVED: "bg-green-500",
-  CLOSED: "bg-gray-500",
-  REOPENED: "bg-orange-500",
+  DRAFT: "bg-gray-500",
+  PENDING: "bg-yellow-500",
+  PASSED: "bg-green-500",
+  FAILED: "bg-red-500",
+  BLOCKED: "bg-orange-500",
+  SKIPPED: "bg-slate-400",
 };
 
 const severityBadgeVariant: Record<string, "destructive" | "default" | "secondary" | "outline"> = {
@@ -82,14 +82,15 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: {
-      flows: {
+      modules: {
+        where: { parentId: null }, // Only root modules
         orderBy: { order: "asc" },
         include: {
-          _count: { select: { screenshots: true } },
+          _count: { select: { testCases: true, children: true } },
         },
       },
       _count: {
-        select: { bugs: true, flows: true },
+        select: { modules: true },
       },
     },
   });
@@ -98,69 +99,74 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     notFound();
   }
 
-  // Get bug statistics
-  const bugStats = await db.bug.groupBy({
+  // Get test case statistics
+  const testCaseStats = await db.testCase.groupBy({
     by: ["status"],
-    where: { projectId },
+    where: { module: { projectId } },
     _count: { status: true },
   });
 
-  const statusCounts = { open: 0, inProgress: 0, resolved: 0, total: 0 };
-  bugStats.forEach((stat) => {
-    statusCounts.total += stat._count.status;
-    if (stat.status === BugStatus.OPEN || stat.status === BugStatus.REOPENED) {
-      statusCounts.open += stat._count.status;
-    } else if (stat.status === BugStatus.IN_PROGRESS || stat.status === BugStatus.IN_REVIEW) {
-      statusCounts.inProgress += stat._count.status;
-    } else {
-      statusCounts.resolved += stat._count.status;
+  const totalTestCases = await db.testCase.count({
+    where: { module: { projectId } },
+  });
+
+  const statusCounts = { passed: 0, failed: 0, pending: 0, total: totalTestCases };
+  testCaseStats.forEach((stat: { status: TestCaseStatus; _count: { status: number } }) => {
+    if (stat.status === TestCaseStatus.PASSED) {
+      statusCounts.passed += stat._count.status;
+    } else if (stat.status === TestCaseStatus.FAILED) {
+      statusCounts.failed += stat._count.status;
+    } else if (stat.status === TestCaseStatus.PENDING || stat.status === TestCaseStatus.DRAFT) {
+      statusCounts.pending += stat._count.status;
     }
   });
 
-  // Get recent bugs
-  const recentBugs = await db.bug.findMany({
-    where: { projectId },
+  // Get recent test cases
+  const recentTestCases = await db.testCase.findMany({
+    where: { module: { projectId } },
     take: 5,
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
+      referenceId: true,
       title: true,
       status: true,
       severity: true,
       createdAt: true,
+      module: { select: { id: true, name: true } },
       assignee: { select: { name: true, email: true, avatarUrl: true } },
     },
   });
 
   const stats = [
     {
-      title: "Open Bugs",
-      value: statusCounts.open,
-      icon: AlertCircle,
-      color: "text-red-500",
-    },
-    {
-      title: "In Progress",
-      value: statusCounts.inProgress,
-      icon: Clock,
-      color: "text-yellow-500",
-    },
-    {
-      title: "Resolved",
-      value: statusCounts.resolved,
+      title: "Passed",
+      value: statusCounts.passed,
       icon: CheckCircle,
       color: "text-green-500",
     },
     {
-      title: "Total Flows",
-      value: project._count.flows,
+      title: "Failed",
+      value: statusCounts.failed,
+      icon: XCircle,
+      color: "text-red-500",
+    },
+    {
+      title: "Pending",
+      value: statusCounts.pending,
+      icon: Clock,
+      color: "text-yellow-500",
+    },
+    {
+      title: "Modules",
+      value: project._count.modules,
       icon: Layers,
       color: "text-blue-500",
     },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
@@ -175,100 +181,109 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       </Breadcrumb>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
           <div
-            className="h-12 w-12 rounded-lg flex items-center justify-center"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{ backgroundColor: project.color }}
           >
-            <FolderKanban className="h-6 w-6 text-white" />
+            <FolderKanban className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              {project.name}
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex flex-wrap items-center gap-2">
+              <span className="truncate">{project.name}</span>
               {project.isArchived && (
                 <Badge variant="secondary">Archived</Badge>
               )}
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-sm sm:text-base text-muted-foreground line-clamp-2">
               {project.description || "No description"}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild size="sm" className="flex-1 sm:flex-none">
             <Link href={`/${orgSlug}/projects/${projectId}/settings`}>
               <Settings className="mr-2 h-4 w-4" />
-              Settings
+              <span className="hidden xs:inline">Settings</span>
             </Link>
           </Button>
-          <Button asChild>
-            <Link href={`/${orgSlug}/bugs/new?projectId=${projectId}`}>
-              <Plus className="mr-2 h-4 w-4" />
-              Report Bug
+          <Button asChild size="sm" className="flex-1 sm:flex-none">
+            <Link href={`/${orgSlug}/projects/${projectId}/modules`}>
+              <Layers className="mr-2 h-4 w-4" />
+              Modules
             </Link>
           </Button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 p-3 sm:p-6 sm:pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                 {stat.title}
               </CardTitle>
               <stat.icon className={`h-4 w-4 ${stat.color}`} />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-xl sm:text-2xl font-bold">{stat.value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Flows */}
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
+        {/* Modules */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <CardTitle>Flows</CardTitle>
-              <CardDescription>Organize screenshots by user flows</CardDescription>
+              <CardTitle>Modules</CardTitle>
+              <CardDescription>Organize test cases by module</CardDescription>
             </div>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/${orgSlug}/projects/${projectId}/flows`}>
-                View all
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" asChild>
+                <Link href={`/${orgSlug}/projects/${projectId}/modules?create=true`}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/${orgSlug}/projects/${projectId}/modules`}>
+                  View all
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            {project.flows.length === 0 ? (
+            {project.modules.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Layers className="h-10 w-10 text-muted-foreground/50 mb-3" />
                 <p className="text-sm text-muted-foreground mb-3">
-                  No flows created yet
+                  No modules created yet
                 </p>
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/${orgSlug}/projects/${projectId}/flows`}>
+                  <Link href={`/${orgSlug}/projects/${projectId}/modules`}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Create Flow
+                    Create Module
                   </Link>
                 </Button>
               </div>
             ) : (
               <div className="space-y-2">
-                {project.flows.slice(0, 5).map((flow) => (
+                {project.modules.slice(0, 5).map((module) => (
                   <Link
-                    key={flow.id}
-                    href={`/${orgSlug}/projects/${projectId}/flows/${flow.id}`}
+                    key={module.id}
+                    href={`/${orgSlug}/projects/${projectId}/modules`}
                     className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                   >
                     <div>
-                      <p className="font-medium">{flow.name}</p>
+                      <p className="font-medium">{module.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {flow._count.screenshots} screenshots
+                        {module._count.testCases} test cases
+                        {module._count.children > 0 && ` • ${module._count.children} sub-modules`}
                       </p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -279,60 +294,67 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           </CardContent>
         </Card>
 
-        {/* Recent Bugs */}
+        {/* Recent Test Cases */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <CardTitle>Recent Bugs</CardTitle>
-              <CardDescription>Latest bug reports in this project</CardDescription>
+              <CardTitle>Recent Test Cases</CardTitle>
+              <CardDescription>Latest test cases in this project</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link href={`/${orgSlug}/bugs?projectId=${projectId}`}>
+              <Link href={`/${orgSlug}/testcases?projectId=${projectId}`}>
                 View all
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardHeader>
           <CardContent>
-            {recentBugs.length === 0 ? (
+            {recentTestCases.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Bug className="h-10 w-10 text-muted-foreground/50 mb-3" />
+                <CheckSquare className="h-10 w-10 text-muted-foreground/50 mb-3" />
                 <p className="text-sm text-muted-foreground mb-3">
-                  No bugs reported yet
+                  No test cases created yet
                 </p>
                 <Button variant="outline" size="sm" asChild>
-                  <Link href={`/${orgSlug}/bugs/new?projectId=${projectId}`}>
+                  <Link href={`/${orgSlug}/projects/${projectId}/modules`}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Report Bug
+                    Create Test Case
                   </Link>
                 </Button>
               </div>
             ) : (
               <div className="space-y-2">
-                {recentBugs.map((bug) => (
+                {recentTestCases.map((testCase) => (
                   <Link
-                    key={bug.id}
-                    href={`/${orgSlug}/bugs/${bug.id}`}
+                    key={testCase.id}
+                    href={`/${orgSlug}/projects/${projectId}/modules/${testCase.module.id}/testcases/${testCase.id}`}
                     className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`h-2 w-2 rounded-full shrink-0 ${statusColors[bug.status]}`} />
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${statusColors[testCase.status]}`} />
                       <div className="min-w-0">
-                        <p className="font-medium truncate">{bug.title}</p>
+                        <div className="flex items-center gap-2">
+                          {testCase.referenceId && (
+                            <Badge variant="secondary" className="font-mono text-xs px-1.5 py-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+                              {testCase.referenceId}
+                            </Badge>
+                          )}
+                          <p className="font-medium truncate">{testCase.title}</p>
+                        </div>
                         <p className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(bug.createdAt), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(testCase.createdAt), { addSuffix: true })}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Badge variant={severityBadgeVariant[bug.severity]}>
-                        {bug.severity}
+                      <Badge variant={severityBadgeVariant[testCase.severity]}>
+                        Sev: {testCase.severity}
                       </Badge>
-                      {bug.assignee && (
+                      {testCase.assignee && (
                         <Avatar className="h-6 w-6">
-                          <AvatarImage src={bug.assignee.avatarUrl || undefined} />
+                          <AvatarImage src={testCase.assignee.avatarUrl || undefined} />
                           <AvatarFallback className="text-xs">
-                            {getInitials(bug.assignee.name, bug.assignee.email)}
+                            {getInitials(testCase.assignee.name, testCase.assignee.email)}
                           </AvatarFallback>
                         </Avatar>
                       )}

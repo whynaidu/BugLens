@@ -200,6 +200,48 @@ async function getAzureDevOpsTokens(
   };
 }
 
+/**
+ * Helper to get or create an "Imported" module for a project
+ * This is used when syncing test cases from external integrations (Jira, Trello, Azure DevOps)
+ */
+async function getOrCreateImportModule(
+  db: typeof import("@/server/db").db,
+  projectId: string
+): Promise<string> {
+  // Try to find existing "Imported" module
+  let importModule = await db.module.findFirst({
+    where: {
+      projectId,
+      name: "Imported",
+      parentId: null, // Root level
+    },
+    select: { id: true },
+  });
+
+  // Create if not exists
+  if (!importModule) {
+    // Get the highest order number for root modules
+    const lastModule = await db.module.findFirst({
+      where: { projectId, parentId: null },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    });
+
+    importModule = await db.module.create({
+      data: {
+        projectId,
+        name: "Imported",
+        description: "Test cases imported from external integrations",
+        order: (lastModule?.order ?? -1) + 1,
+        depth: 0,
+      },
+      select: { id: true },
+    });
+  }
+
+  return importModule.id;
+}
+
 export const integrationsRouter = createTRPCRouter({
   /**
    * Get all integrations for an organization
@@ -860,10 +902,10 @@ export const integrationsRouter = createTRPCRouter({
       }
 
       // Get bug details
-      const bug = await ctx.db.bug.findUnique({
+      const bug = await ctx.db.testCase.findUnique({
         where: { id: input.bugId },
         include: {
-          project: true,
+          module: { include: { project: true } },
           assignee: true,
           creator: true,
         },
@@ -938,7 +980,7 @@ export const integrationsRouter = createTRPCRouter({
 
         // Store Jira issue key in bug
         const existingExternalIds = (bug.externalIds as Record<string, string>) || {};
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: bug.id },
           data: {
             externalIds: {
@@ -1009,7 +1051,7 @@ export const integrationsRouter = createTRPCRouter({
         "OPEN";
 
       // Check if bug already exists
-      const existingBug = await ctx.db.bug.findFirst({
+      const existingBug = await ctx.db.testCase.findFirst({
         where: {
           externalIds: {
             path: ["jira"],
@@ -1020,13 +1062,13 @@ export const integrationsRouter = createTRPCRouter({
 
       if (existingBug) {
         // Update existing bug
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: existingBug.id },
           data: {
             title: issue.fields.summary,
             description: issue.fields.description ?? "",
             severity: severity as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
           },
         });
 
@@ -1036,14 +1078,16 @@ export const integrationsRouter = createTRPCRouter({
           bugId: existingBug.id,
         };
       } else {
-        // Create new bug
-        const bug = await ctx.db.bug.create({
+        // Create new test case in the "Imported" module
+        const moduleId = await getOrCreateImportModule(ctx.db, input.projectId);
+        const testCase = await ctx.db.testCase.create({
           data: {
-            projectId: input.projectId,
+            moduleId,
             title: issue.fields.summary,
             description: issue.fields.description ?? "",
             severity: severity as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            priority: "MEDIUM", // Default priority for imported test cases
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
             creatorId: ctx.session.user.id,
             externalIds: {
               jira: issue.key,
@@ -1054,7 +1098,7 @@ export const integrationsRouter = createTRPCRouter({
         return {
           success: true,
           action: "created",
-          bugId: bug.id,
+          testCaseId: testCase.id,
         };
       }
     }),
@@ -1443,10 +1487,10 @@ export const integrationsRouter = createTRPCRouter({
       }
 
       // Get bug details
-      const bug = await ctx.db.bug.findUnique({
+      const bug = await ctx.db.testCase.findUnique({
         where: { id: input.bugId },
         include: {
-          project: true,
+          module: { include: { project: true } },
         },
       });
 
@@ -1492,7 +1536,7 @@ export const integrationsRouter = createTRPCRouter({
 
         // Store Trello card ID in bug
         const existingExternalIds = (bug.externalIds as Record<string, string>) || {};
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: bug.id },
           data: {
             externalIds: {
@@ -1545,7 +1589,7 @@ export const integrationsRouter = createTRPCRouter({
       const status = reverseMapping[card.idList] || "OPEN";
 
       // Check if bug already exists
-      const existingBug = await ctx.db.bug.findFirst({
+      const existingBug = await ctx.db.testCase.findFirst({
         where: {
           externalIds: {
             path: ["trello"],
@@ -1556,12 +1600,12 @@ export const integrationsRouter = createTRPCRouter({
 
       if (existingBug) {
         // Update existing bug
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: existingBug.id },
           data: {
             title: card.name,
             description: card.desc ?? "",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
           },
         });
 
@@ -1571,14 +1615,16 @@ export const integrationsRouter = createTRPCRouter({
           bugId: existingBug.id,
         };
       } else {
-        // Create new bug
-        const bug = await ctx.db.bug.create({
+        // Create new test case in the "Imported" module
+        const moduleId = await getOrCreateImportModule(ctx.db, input.projectId);
+        const testCase = await ctx.db.testCase.create({
           data: {
-            projectId: input.projectId,
+            moduleId,
             title: card.name,
             description: card.desc ?? "",
             severity: "MEDIUM",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            priority: "MEDIUM", // Default priority for imported test cases
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
             creatorId: ctx.session.user.id,
             externalIds: {
               trello: card.id,
@@ -1589,7 +1635,7 @@ export const integrationsRouter = createTRPCRouter({
         return {
           success: true,
           action: "created",
-          bugId: bug.id,
+          testCaseId: testCase.id,
         };
       }
     }),
@@ -1924,10 +1970,10 @@ export const integrationsRouter = createTRPCRouter({
       } | null;
 
       // Get bug details
-      const bug = await ctx.db.bug.findUnique({
+      const bug = await ctx.db.testCase.findUnique({
         where: { id: input.bugId },
         include: {
-          project: true,
+          module: { include: { project: true } },
         },
       });
 
@@ -1981,7 +2027,7 @@ export const integrationsRouter = createTRPCRouter({
 
         // Store Azure DevOps work item ID in bug
         const existingExternalIds = (bug.externalIds as Record<string, string>) || {};
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: bug.id },
           data: {
             externalIds: {
@@ -2063,7 +2109,7 @@ export const integrationsRouter = createTRPCRouter({
       const severity = reverseSeverityMapping[priority] || "MEDIUM";
 
       // Check if bug already exists
-      const existingBug = await ctx.db.bug.findFirst({
+      const existingBug = await ctx.db.testCase.findFirst({
         where: {
           externalIds: {
             path: ["azureDevOps"],
@@ -2074,13 +2120,13 @@ export const integrationsRouter = createTRPCRouter({
 
       if (existingBug) {
         // Update existing bug
-        await ctx.db.bug.update({
+        await ctx.db.testCase.update({
           where: { id: existingBug.id },
           data: {
             title: workItem.fields["System.Title"],
             description: (workItem.fields["System.Description"] as string | undefined) ?? "",
             severity: severity as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
           },
         });
 
@@ -2090,14 +2136,16 @@ export const integrationsRouter = createTRPCRouter({
           bugId: existingBug.id,
         };
       } else {
-        // Create new bug
-        const bug = await ctx.db.bug.create({
+        // Create new test case in the "Imported" module
+        const moduleId = await getOrCreateImportModule(ctx.db, input.projectId);
+        const testCase = await ctx.db.testCase.create({
           data: {
-            projectId: input.projectId,
+            moduleId,
             title: workItem.fields["System.Title"],
             description: (workItem.fields["System.Description"] as string | undefined) ?? "",
             severity: severity as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-            status: status as "OPEN" | "IN_PROGRESS" | "IN_REVIEW" | "RESOLVED" | "CLOSED" | "REOPENED" | "WONT_FIX",
+            priority: "MEDIUM", // Default priority for imported test cases
+            status: status as "DRAFT" | "PENDING" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED",
             creatorId: ctx.session.user.id,
             externalIds: {
               azureDevOps: String(workItem.id),
@@ -2108,7 +2156,7 @@ export const integrationsRouter = createTRPCRouter({
         return {
           success: true,
           action: "created",
-          bugId: bug.id,
+          testCaseId: testCase.id,
         };
       }
     }),

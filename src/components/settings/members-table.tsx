@@ -176,12 +176,13 @@ export function MembersTable({
 
   return (
     <>
+      <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Member</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>Joined</TableHead>
+            <TableHead className="min-w-[200px]">Member</TableHead>
+            <TableHead className="min-w-[120px] sm:min-w-[160px]">Role</TableHead>
+            <TableHead className="hidden sm:table-cell">Joined</TableHead>
             {canManageMembers && <TableHead className="w-[70px]">Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -227,7 +228,7 @@ export function MembersTable({
                       }
                       disabled={updateRole.isPending}
                     >
-                      <SelectTrigger className="w-[160px]">
+                      <SelectTrigger className="w-[120px] sm:w-[160px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -248,7 +249,7 @@ export function MembersTable({
                     </Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="hidden sm:table-cell text-muted-foreground">
                   {new Date(member.joinedAt).toLocaleDateString()}
                 </TableCell>
                 {canManageMembers && (
@@ -280,6 +281,7 @@ export function MembersTable({
           })}
         </TableBody>
       </Table>
+      </div>
 
       <AlertDialog
         open={!!memberToRemove}

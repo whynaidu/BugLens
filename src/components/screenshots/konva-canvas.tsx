@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import type { Annotation } from "@/store/annotation-store";
 
@@ -40,6 +40,8 @@ interface KonvaComponents {
   Arrow: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Line: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Transformer: any;
 }
 
 export function KonvaCanvas(props: KonvaCanvasProps) {
@@ -63,6 +65,7 @@ export function KonvaCanvas(props: KonvaCanvasProps) {
             Circle: konva.Ellipse, // Use Ellipse for circle/ellipse shapes
             Arrow: konva.Arrow,
             Line: konva.Line,
+            Transformer: konva.Transformer,
           });
         }
       } catch (err) {
@@ -120,7 +123,38 @@ function KonvaCanvasInner({
   konva,
 }: KonvaCanvasProps & { konva: KonvaComponents }) {
   const stageRef = useRef(null);
-  const { Stage, Layer, Image: KonvaImage, Rect, Circle, Arrow, Line } = konva;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const transformerRef = useRef<any>(null);
+  // Store refs for each annotation shape
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shapeRefs = useRef<Map<string, any>>(new Map());
+
+  const { Stage, Layer, Image: KonvaImage, Rect, Circle, Arrow, Line, Transformer } = konva;
+
+  // Update transformer when selection changes
+  useEffect(() => {
+    if (transformerRef.current) {
+      if (selectedAnnotationId) {
+        const selectedNode = shapeRefs.current.get(selectedAnnotationId);
+        if (selectedNode) {
+          transformerRef.current.nodes([selectedNode]);
+          transformerRef.current.getLayer()?.batchDraw();
+        }
+      } else {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    }
+  }, [selectedAnnotationId]);
+
+  // Store ref for a shape
+  const setShapeRef = useCallback((id: string, node: unknown) => {
+    if (node) {
+      shapeRefs.current.set(id, node);
+    } else {
+      shapeRefs.current.delete(id);
+    }
+  }, []);
 
   // Render annotation shape
   const renderAnnotation = (annotation: Annotation, isDrawingMode = false) => {
@@ -132,34 +166,71 @@ function KonvaCanvasInner({
       onAnnotationClick?.(annotation);
     };
 
-    const props = {
+    // Common props for all shapes
+    const commonProps = {
       key: annotation.id,
       stroke: annotation.stroke,
       strokeWidth: annotation.strokeWidth,
       onClick: handleClick,
       onTap: handleClick,
       draggable: isSelected,
-      onDragEnd: (e: { target: { x: () => number; y: () => number } }) => {
-        const node = e.target;
-        onAnnotationUpdate?.(annotation.id, {
-          x: node.x(),
-          y: node.y(),
-        });
-      },
+      shadowColor: isSelected ? "blue" : undefined,
+      shadowBlur: isSelected ? 10 : 0,
+    };
+
+    // Type for transform event
+    type TransformEvent = {
+      target: {
+        x: () => number;
+        y: () => number;
+        width: () => number;
+        height: () => number;
+        scaleX: () => number;
+        scaleY: () => number;
+        rotation: () => number;
+        setAttrs: (attrs: Record<string, unknown>) => void;
+        position: (pos: { x: number; y: number }) => void;
+      };
     };
 
     switch (annotation.type) {
       case "rectangle":
         return (
           <Rect
-            {...props}
+            {...commonProps}
+            ref={(node: unknown) => !isDrawingMode && setShapeRef(annotation.id, node)}
             x={annotation.x}
             y={annotation.y}
             width={annotation.width || 0}
             height={annotation.height || 0}
             fill="transparent"
-            shadowColor={isSelected ? "blue" : undefined}
-            shadowBlur={isSelected ? 10 : 0}
+            onDragEnd={(e: { target: { x: () => number; y: () => number } }) => {
+              const node = e.target;
+              onAnnotationUpdate?.(annotation.id, {
+                x: node.x(),
+                y: node.y(),
+              });
+            }}
+            onTransformEnd={(e: TransformEvent) => {
+              const node = e.target;
+              const scaleX = node.scaleX();
+              const scaleY = node.scaleY();
+
+              // Reset scale and apply to width/height
+              node.setAttrs({
+                scaleX: 1,
+                scaleY: 1,
+                width: Math.max(5, node.width() * scaleX),
+                height: Math.max(5, node.height() * scaleY),
+              });
+
+              onAnnotationUpdate?.(annotation.id, {
+                x: node.x(),
+                y: node.y(),
+                width: node.width() * scaleX,
+                height: node.height() * scaleY,
+              });
+            }}
           />
         );
       case "circle":
@@ -167,41 +238,166 @@ function KonvaCanvasInner({
         const ry = Math.abs((annotation.height || 0) / 2);
         return (
           <Circle
-            {...props}
+            {...commonProps}
+            ref={(node: unknown) => !isDrawingMode && setShapeRef(annotation.id, node)}
             x={annotation.x + rx}
             y={annotation.y + ry}
             radiusX={rx || 1}
             radiusY={ry || 1}
             fill="transparent"
-            shadowColor={isSelected ? "blue" : undefined}
-            shadowBlur={isSelected ? 10 : 0}
+            onDragEnd={(e: { target: { x: () => number; y: () => number } }) => {
+              const node = e.target;
+              // Circle is centered, so we need to adjust back to top-left corner
+              onAnnotationUpdate?.(annotation.id, {
+                x: node.x() - rx,
+                y: node.y() - ry,
+              });
+            }}
+            onTransformEnd={(e: TransformEvent) => {
+              const node = e.target;
+              const scaleX = node.scaleX();
+              const scaleY = node.scaleY();
+
+              // Get the new radii after scaling
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const nodeAny = node as any;
+              const newRadiusX = Math.max(5, (nodeAny.radiusX?.() || rx) * scaleX);
+              const newRadiusY = Math.max(5, (nodeAny.radiusY?.() || ry) * scaleY);
+
+              // Reset scale
+              node.setAttrs({
+                scaleX: 1,
+                scaleY: 1,
+              });
+
+              // Calculate new top-left corner from center position
+              const centerX = node.x();
+              const centerY = node.y();
+
+              onAnnotationUpdate?.(annotation.id, {
+                x: centerX - newRadiusX,
+                y: centerY - newRadiusY,
+                width: newRadiusX * 2,
+                height: newRadiusY * 2,
+              });
+            }}
           />
         );
       case "arrow":
         const arrowPts = annotation.points || [annotation.x, annotation.y, annotation.x, annotation.y];
         return (
           <Arrow
-            {...props}
+            {...commonProps}
+            ref={(node: unknown) => !isDrawingMode && setShapeRef(annotation.id, node)}
             points={arrowPts}
             pointerLength={10}
             pointerWidth={10}
             fill={annotation.stroke}
             hitStrokeWidth={20}
-            shadowColor={isSelected ? "blue" : undefined}
-            shadowBlur={isSelected ? 10 : 0}
+            onDragEnd={(e: { target: { x: () => number; y: () => number; position: (pos: { x: number; y: number }) => void } }) => {
+              const node = e.target;
+              // For lines/arrows, the node position is the drag offset
+              const dx = node.x();
+              const dy = node.y();
+              // Reset node position and update points with the delta
+              node.position({ x: 0, y: 0 });
+              const newPoints = arrowPts.map((val, idx) =>
+                idx % 2 === 0 ? val + dx : val + dy
+              );
+              onAnnotationUpdate?.(annotation.id, {
+                points: newPoints,
+              });
+            }}
+            onTransformEnd={(e: TransformEvent) => {
+              const node = e.target;
+              const scaleX = node.scaleX();
+              const scaleY = node.scaleY();
+
+              // Reset scale
+              node.setAttrs({
+                scaleX: 1,
+                scaleY: 1,
+              });
+
+              // Scale all points relative to the shape's position
+              const offsetX = node.x();
+              const offsetY = node.y();
+              node.position({ x: 0, y: 0 });
+
+              const newPoints = arrowPts.map((val, idx) => {
+                if (idx % 2 === 0) {
+                  return (val - arrowPts[0]) * scaleX + arrowPts[0] + offsetX;
+                } else {
+                  return (val - arrowPts[1]) * scaleY + arrowPts[1] + offsetY;
+                }
+              });
+
+              onAnnotationUpdate?.(annotation.id, {
+                points: newPoints,
+              });
+            }}
           />
         );
       case "freehand":
+        const freehandPts = annotation.points || [];
         return (
           <Line
-            {...props}
-            points={annotation.points || []}
+            {...commonProps}
+            ref={(node: unknown) => !isDrawingMode && setShapeRef(annotation.id, node)}
+            points={freehandPts}
             tension={0.5}
             lineCap="round"
             lineJoin="round"
             hitStrokeWidth={20}
-            shadowColor={isSelected ? "blue" : undefined}
-            shadowBlur={isSelected ? 10 : 0}
+            onDragEnd={(e: { target: { x: () => number; y: () => number; position: (pos: { x: number; y: number }) => void } }) => {
+              const node = e.target;
+              // For lines, the node position is the drag offset
+              const dx = node.x();
+              const dy = node.y();
+              // Reset node position and update points with the delta
+              node.position({ x: 0, y: 0 });
+              const newPoints = freehandPts.map((val, idx) =>
+                idx % 2 === 0 ? val + dx : val + dy
+              );
+              onAnnotationUpdate?.(annotation.id, {
+                points: newPoints,
+              });
+            }}
+            onTransformEnd={(e: TransformEvent) => {
+              const node = e.target;
+              const scaleX = node.scaleX();
+              const scaleY = node.scaleY();
+
+              // Reset scale
+              node.setAttrs({
+                scaleX: 1,
+                scaleY: 1,
+              });
+
+              // Find bounding box of original points
+              let minX = Infinity, minY = Infinity;
+              for (let i = 0; i < freehandPts.length; i += 2) {
+                minX = Math.min(minX, freehandPts[i]);
+                minY = Math.min(minY, freehandPts[i + 1]);
+              }
+
+              // Scale all points relative to the min point
+              const offsetX = node.x();
+              const offsetY = node.y();
+              node.position({ x: 0, y: 0 });
+
+              const newPoints = freehandPts.map((val, idx) => {
+                if (idx % 2 === 0) {
+                  return (val - minX) * scaleX + minX + offsetX;
+                } else {
+                  return (val - minY) * scaleY + minY + offsetY;
+                }
+              });
+
+              onAnnotationUpdate?.(annotation.id, {
+                points: newPoints,
+              });
+            }}
           />
         );
       default:
@@ -236,6 +432,29 @@ function KonvaCanvasInner({
       <Layer>
         {annotations.map((annotation) => renderAnnotation(annotation))}
         {drawingAnnotation && renderAnnotation(drawingAnnotation, true)}
+        {/* Transformer for resize handles */}
+        <Transformer
+          ref={transformerRef}
+          rotateEnabled={false}
+          keepRatio={false}
+          enabledAnchors={[
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
+            "middle-left",
+            "middle-right",
+            "top-center",
+            "bottom-center",
+          ]}
+          boundBoxFunc={(oldBox: { x: number; y: number; width: number; height: number }, newBox: { x: number; y: number; width: number; height: number }) => {
+            // Limit minimum size
+            if (Math.abs(newBox.width) < 10 || Math.abs(newBox.height) < 10) {
+              return oldBox;
+            }
+            return newBox;
+          }}
+        />
       </Layer>
     </Stage>
   );

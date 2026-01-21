@@ -6,7 +6,7 @@ import {
   processExportJob,
   type ExportFilters,
 } from "@/server/services/export";
-import { BugStatus, BugSeverity, BugPriority } from "@prisma/client";
+import { TestCaseStatus, BugSeverity, BugPriority } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const exportFilters: ExportFilters = {
       dateFrom: filters.dateFrom ? new Date(filters.dateFrom) : undefined,
       dateTo: filters.dateTo ? new Date(filters.dateTo) : undefined,
-      status: filters.status as BugStatus[] | undefined,
+      status: filters.status as TestCaseStatus[] | undefined,
       severity: filters.severity as BugSeverity[] | undefined,
       priority: filters.priority as BugPriority[] | undefined,
       includeScreenshots: filters.includeScreenshots ?? true,

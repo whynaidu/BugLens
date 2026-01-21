@@ -17,11 +17,10 @@ interface CollaborativeCanvasProps {
   screenshotId: string;
   projectId: string;
   initialAnnotations?: Annotation[];
-  annotationBugMap?: Record<string, string>;
+  annotationTestCaseMap?: Record<string, string>;
   onAnnotationsChange?: (annotations: Annotation[]) => void;
   saveStatus?: "idle" | "saving" | "saved" | "error";
   onSave?: () => void;
-  onBugCreated?: (annotationId: string, bugId: string) => void;
 }
 
 /**
@@ -101,11 +100,10 @@ function CollaborativeCanvasContent({
   screenshotId,
   projectId,
   initialAnnotations = [],
-  annotationBugMap = {},
+  annotationTestCaseMap = {},
   onAnnotationsChange,
   saveStatus = "idle",
   onSave,
-  onBugCreated,
 }: CollaborativeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { updateCursor, clearCursor } = useCursorPresence();
@@ -180,11 +178,10 @@ function CollaborativeCanvasContent({
           screenshotId={screenshotId}
           projectId={projectId}
           initialAnnotations={initialAnnotations}
-          annotationBugMap={annotationBugMap}
+          annotationTestCaseMap={annotationTestCaseMap}
           onAnnotationsChange={handleAnnotationsChange}
           saveStatus={saveStatus}
           onSave={onSave}
-          onBugCreated={onBugCreated}
         />
 
         {/* Connection status indicator */}

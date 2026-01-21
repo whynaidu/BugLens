@@ -27,6 +27,11 @@ export const createProjectSchema = z.object({
     .min(1, "Project name is required")
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters"),
+  code: z
+    .string()
+    .max(10, "Code must be 10 characters or less")
+    .regex(/^[A-Z0-9]*$/, "Code must be uppercase letters and numbers only")
+    .optional(),
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
@@ -44,6 +49,11 @@ export const updateProjectSchema = z.object({
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters")
+    .optional(),
+  code: z
+    .string()
+    .max(10, "Code must be 10 characters or less")
+    .regex(/^[A-Z0-9]*$/, "Code must be uppercase letters and numbers only")
     .optional(),
   description: z
     .string()

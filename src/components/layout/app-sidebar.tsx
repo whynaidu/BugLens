@@ -5,7 +5,7 @@ import { useParams, usePathname } from "next/navigation";
 import {
   Home,
   FolderKanban,
-  Bug,
+  CheckSquare,
   BarChart3,
   Settings,
   HelpCircle,
@@ -38,9 +38,9 @@ const mainNavItems = [
     href: "/projects",
   },
   {
-    title: "Bugs",
-    icon: Bug,
-    href: "/bugs",
+    title: "Test Cases",
+    icon: CheckSquare,
+    href: "/testcases",
   },
   {
     title: "Reports",

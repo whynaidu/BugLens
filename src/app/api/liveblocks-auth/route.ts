@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     // Allow access to all rooms the user has access to
     // In production, you'd want to be more restrictive
     liveblocksSession.allow("screenshot:*", liveblocksSession.FULL_ACCESS);
-    liveblocksSession.allow("bug:*", liveblocksSession.FULL_ACCESS);
+    liveblocksSession.allow("testcase:*", liveblocksSession.FULL_ACCESS);
   }
 
   // Authorize and return the response
@@ -116,10 +116,43 @@ async function verifyRoomAccess(userId: string, room: string): Promise<boolean> 
   switch (resourceType) {
     case "screenshot": {
       // Verify user has access to the screenshot's organization
+      // Screenshot -> TestCase -> Module -> Project -> Organization
       const screenshot = await db.screenshot.findUnique({
         where: { id: resourceId },
         select: {
-          flow: {
+          testCase: {
+            select: {
+              module: {
+                select: {
+                  project: {
+                    select: {
+                      organization: {
+                        select: {
+                          members: {
+                            where: { userId },
+                            select: { id: true },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return (screenshot?.testCase?.module?.project?.organization?.members?.length ?? 0) > 0;
+    }
+
+    case "testcase": {
+      // Verify user has access to the test case's organization
+      // TestCase -> Module -> Project -> Organization
+      const testCase = await db.testCase.findUnique({
+        where: { id: resourceId },
+        select: {
+          module: {
             select: {
               project: {
                 select: {
@@ -138,30 +171,7 @@ async function verifyRoomAccess(userId: string, room: string): Promise<boolean> 
         },
       });
 
-      return (screenshot?.flow?.project?.organization?.members?.length ?? 0) > 0;
-    }
-
-    case "bug": {
-      // Verify user has access to the bug's organization
-      const bug = await db.bug.findUnique({
-        where: { id: resourceId },
-        select: {
-          project: {
-            select: {
-              organization: {
-                select: {
-                  members: {
-                    where: { userId },
-                    select: { id: true },
-                  },
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return (bug?.project?.organization?.members?.length ?? 0) > 0;
+      return (testCase?.module?.project?.organization?.members?.length ?? 0) > 0;
     }
 
     default:

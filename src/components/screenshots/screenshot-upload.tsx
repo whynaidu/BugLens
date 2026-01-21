@@ -16,14 +16,14 @@ import { FileUpload } from "@/components/shared/file-upload";
 import { useMultiUpload } from "@/hooks/use-upload";
 
 interface ScreenshotUploadProps {
-  flowId: string;
+  testCaseId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete?: () => void;
 }
 
 export function ScreenshotUpload({
-  flowId,
+  testCaseId,
   open,
   onOpenChange,
   onComplete,
@@ -38,7 +38,7 @@ export function ScreenshotUpload({
     completedCount,
     errorCount,
     pendingCount,
-  } = useMultiUpload({ flowId });
+  } = useMultiUpload({ testCaseId });
 
   const handleFilesSelected = useCallback(
     (files: File[]) => {
@@ -79,7 +79,7 @@ export function ScreenshotUpload({
         <DialogHeader>
           <DialogTitle>Upload Screenshots</DialogTitle>
           <DialogDescription>
-            Add screenshots to this flow. You can upload multiple files at once.
+            Add screenshots to this test case. You can upload multiple files at once.
           </DialogDescription>
         </DialogHeader>
 

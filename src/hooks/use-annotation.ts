@@ -88,7 +88,7 @@ export function useAnnotation({
         points: a.points ?? undefined,
         stroke: a.stroke,
         strokeWidth: a.strokeWidth,
-        bugs: a.bugs || [],
+        testCases: a.testCases || [],
       }));
       setAnnotations(storeAnnotations);
       lastSavedRef.current = JSON.stringify(fetchedAnnotations);
@@ -175,7 +175,7 @@ export function useAnnotation({
         points: a.points ?? undefined,
         stroke: a.stroke,
         strokeWidth: a.strokeWidth,
-        bugs: a.bugs || [],
+        testCases: a.testCases || [],
       }));
       setAnnotations(storeAnnotations);
     }
@@ -197,12 +197,12 @@ export function useAnnotation({
 }
 
 /**
- * Hook for linking/unlinking an annotation to a bug
+ * Hook for linking/unlinking an annotation to a test case
  */
-export function useLinkAnnotationToBug() {
+export function useLinkAnnotationToTestCase() {
   const utils = trpc.useUtils();
 
-  return trpc.annotations.linkToBug.useMutation({
+  return trpc.annotations.linkToTestCase.useMutation({
     onSuccess: (data) => {
       // Invalidate the screenshot annotations cache
       utils.annotations.getByScreenshot.invalidate({ screenshotId: data.screenshotId });

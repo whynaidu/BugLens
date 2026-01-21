@@ -20,12 +20,12 @@ export interface UploadState {
 }
 
 export interface UseUploadOptions {
-  flowId: string;
+  testCaseId: string;
   onSuccess?: (screenshotId: string) => void;
   onError?: (error: string) => void;
 }
 
-export function useUpload({ flowId, onSuccess, onError }: UseUploadOptions) {
+export function useUpload({ testCaseId, onSuccess, onError }: UseUploadOptions) {
   const [state, setState] = useState<UploadState>({
     status: "idle",
     progress: 0,
@@ -58,7 +58,7 @@ export function useUpload({ flowId, onSuccess, onError }: UseUploadOptions) {
 
         // Get presigned URL
         const { uploadUrl, key, screenshotId: _screenshotId } = await getUploadUrl.mutateAsync({
-          flowId,
+          testCaseId,
           fileName: file.name,
           contentType: file.type as AllowedImageType,
           fileSize: file.size,
@@ -119,7 +119,7 @@ export function useUpload({ flowId, onSuccess, onError }: UseUploadOptions) {
 
         // Create screenshot record
         const screenshot = await createScreenshot.mutateAsync({
-          flowId,
+          testCaseId,
           s3Key: key,
           title: file.name.replace(/\.[^.]+$/, ""),
           fileSize: file.size,
@@ -148,7 +148,7 @@ export function useUpload({ flowId, onSuccess, onError }: UseUploadOptions) {
         throw err;
       }
     },
-    [flowId, getUploadUrl, createScreenshot, onSuccess, onError]
+    [testCaseId, getUploadUrl, createScreenshot, onSuccess, onError]
   );
 
   return {
@@ -165,7 +165,7 @@ export interface UploadItem {
   state: UploadState;
 }
 
-export function useMultiUpload({ flowId }: { flowId: string }) {
+export function useMultiUpload({ testCaseId }: { testCaseId: string }) {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -221,7 +221,7 @@ export function useMultiUpload({ flowId }: { flowId: string }) {
         updateUploadState(id, { status: "getting-url" });
 
         const { uploadUrl, key } = await getUploadUrl.mutateAsync({
-          flowId,
+          testCaseId,
           fileName: file.name,
           contentType: file.type as AllowedImageType,
           fileSize: file.size,
@@ -260,7 +260,7 @@ export function useMultiUpload({ flowId }: { flowId: string }) {
         updateUploadState(id, { status: "processing", progress: 100 });
 
         const screenshot = await createScreenshot.mutateAsync({
-          flowId,
+          testCaseId,
           s3Key: key,
           title: file.name.replace(/\.[^.]+$/, ""),
           fileSize: file.size,
@@ -284,7 +284,7 @@ export function useMultiUpload({ flowId }: { flowId: string }) {
         throw err;
       }
     },
-    [flowId, getUploadUrl, createScreenshot, updateUploadState]
+    [testCaseId, getUploadUrl, createScreenshot, updateUploadState]
   );
 
   const startUploads = useCallback(async () => {
@@ -305,8 +305,46 @@ export function useMultiUpload({ flowId }: { flowId: string }) {
     setIsUploading(false);
 
     // Invalidate screenshots query to refresh the list
-    utils.screenshots.getByFlow.invalidate({ flowId });
-  }, [uploads, uploadFile, flowId, utils.screenshots.getByFlow]);
+    utils.screenshots.getByTestCase.invalidate({ testCaseId });
+  }, [uploads, uploadFile, testCaseId, utils.screenshots.getByTestCase]);
+
+  // Combined function that adds files and immediately starts uploading them
+  const addFilesAndUpload = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+
+      // Create upload items
+      const newUploads: UploadItem[] = files.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        state: {
+          status: "idle" as const,
+          progress: 0,
+          error: null,
+          screenshotId: null,
+        },
+      }));
+
+      // Add to state
+      setUploads((prev) => [...prev, ...newUploads]);
+      setIsUploading(true);
+
+      // Upload files sequentially
+      for (const upload of newUploads) {
+        try {
+          await uploadFile(upload);
+        } catch {
+          // Error already handled in uploadFile
+        }
+      }
+
+      setIsUploading(false);
+
+      // Invalidate screenshots query to refresh the list
+      utils.screenshots.getByTestCase.invalidate({ testCaseId });
+    },
+    [uploadFile, testCaseId, utils.screenshots.getByTestCase]
+  );
 
   const completedCount = uploads.filter((u) => u.state.status === "complete").length;
   const errorCount = uploads.filter((u) => u.state.status === "error").length;
@@ -318,6 +356,7 @@ export function useMultiUpload({ flowId }: { flowId: string }) {
     uploads,
     isUploading,
     addFiles,
+    addFilesAndUpload,
     removeUpload,
     clearCompleted,
     clearAll,

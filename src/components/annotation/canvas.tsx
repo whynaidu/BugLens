@@ -10,29 +10,26 @@ import type { Annotation, Size, AnnotationTool } from "@/types/annotation";
 import { normalizeCoordinate } from "@/types/annotation";
 import { AnnotationShape } from "./shapes";
 import { AnnotationToolbar } from "./toolbar";
-import { BugDialog } from "./bug-dialog";
 
 interface AnnotationCanvasProps {
   imageUrl: string;
   screenshotId: string;
   projectId: string;
   initialAnnotations?: Annotation[];
-  annotationBugMap?: Record<string, string>; // Map annotation ID to bug ID
+  annotationTestCaseMap?: Record<string, string>; // Map annotation ID to test case ID
   onAnnotationsChange?: (annotations: Annotation[]) => void;
   saveStatus?: "idle" | "saving" | "saved" | "error";
   onSave?: () => void;
-  onBugCreated?: (annotationId: string, bugId: string) => void;
 }
 
 export function AnnotationCanvas({
   imageUrl,
   projectId,
   initialAnnotations = [],
-  annotationBugMap = {},
+  annotationTestCaseMap = {},
   onAnnotationsChange,
   saveStatus = "idle",
   onSave,
-  onBugCreated,
 }: AnnotationCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -45,10 +42,6 @@ export function AnnotationCanvas({
   useEffect(() => {
     setIsMounted(true);
   }, []);
-
-  // Bug dialog state
-  const [bugDialogOpen, setBugDialogOpen] = useState(false);
-  const [bugDialogAnnotationId, setBugDialogAnnotationId] = useState<string | null>(null);
 
   // History for undo/redo - initialized with initialAnnotations
   const [history, setHistory] = useState<Annotation[][]>(() => [initialAnnotations]);
@@ -381,28 +374,12 @@ export function AnnotationCanvas({
     pushToHistory(updatedAnnotations as Annotation[]);
   };
 
-  // Double-click handler to open bug dialog
+  // Double-click handler (placeholder for future functionality)
   const handleAnnotationDoubleClick = useCallback((annotationId: string) => {
-    setBugDialogAnnotationId(annotationId);
-    setBugDialogOpen(true);
+    // In the new architecture, annotations belong to screenshots which belong to test cases
+    // Double-click could be used for viewing annotation details or editing
+    console.log("Annotation double-clicked:", annotationId);
   }, []);
-
-  // Bug dialog close handler
-  const handleBugDialogClose = useCallback((open: boolean) => {
-    setBugDialogOpen(open);
-    if (!open) {
-      setBugDialogAnnotationId(null);
-    }
-  }, []);
-
-  // Bug creation success handler
-  const handleBugSuccess = useCallback(() => {
-    if (bugDialogAnnotationId && onBugCreated) {
-      // The actual bug ID would need to be passed from the dialog
-      // For now, this triggers a refresh
-      onBugCreated(bugDialogAnnotationId, "");
-    }
-  }, [bugDialogAnnotationId, onBugCreated]);
 
   // Wheel handler for zoom
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -525,7 +502,7 @@ export function AnnotationCanvas({
                   onChange={(updates) => handleAnnotationChange(annotation.id, updates)}
                   onDoubleClick={() => handleAnnotationDoubleClick(annotation.id)}
                   draggable={selectedTool === "select"}
-                  hasBug={!!annotationBugMap[annotation.id]}
+                  hasTestCase={!!annotationTestCaseMap[annotation.id]}
                 />
               ))}
 
@@ -535,15 +512,6 @@ export function AnnotationCanvas({
           </Stage>
         )}
       </div>
-
-      {/* Bug Dialog */}
-      <BugDialog
-        open={bugDialogOpen}
-        onOpenChange={handleBugDialogClose}
-        projectId={projectId}
-        annotationId={bugDialogAnnotationId ?? undefined}
-        onSuccess={handleBugSuccess}
-      />
     </div>
   );
 }

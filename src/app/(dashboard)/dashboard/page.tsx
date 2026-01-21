@@ -15,8 +15,8 @@ export default function DashboardPage() {
         // Redirect to the first organization
         router.replace(`/${organizations[0].slug}`);
       } else {
-        // No organizations, go to selection page
-        router.replace("/select-organization");
+        // No organizations, go to onboarding page
+        router.replace("/onboarding");
       }
     }
   }, [organizations, isLoading, router]);

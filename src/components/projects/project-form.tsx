@@ -26,6 +26,11 @@ const formSchema = z.object({
     .min(1, "Project name is required")
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters"),
+  code: z
+    .string()
+    .max(10, "Code must be 10 characters or less")
+    .regex(/^[A-Z0-9]*$/, "Code must be uppercase letters and numbers only")
+    .optional(),
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
@@ -52,31 +57,68 @@ export function ProjectForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: defaultValues?.name || "",
+      code: defaultValues?.code || "",
       description: defaultValues?.description || "",
       color: defaultValues?.color || PROJECT_COLORS[0],
     },
   });
 
+  const handleSubmit = (data: ProjectFormData) => {
+    // Convert empty code string to undefined
+    onSubmit({
+      ...data,
+      code: data.code || undefined,
+    });
+  };
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Project Name</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="My Project"
-                  disabled={isLoading}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Project Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="My Project"
+                      disabled={isLoading}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="code"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Code</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g., PRJ"
+                    disabled={isLoading}
+                    className="font-mono uppercase"
+                    maxLength={10}
+                    {...field}
+                    value={field.value || ""}
+                    onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Short code for Reference IDs
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={form.control}

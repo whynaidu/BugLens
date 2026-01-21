@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { MembersTable } from "@/components/settings/members-table";
 import { InviteDialog } from "@/components/settings/invite-dialog";
+import { JoinRequestsPanel } from "@/components/settings/join-requests-panel";
+import { InviteLinksPanel } from "@/components/settings/invite-links-panel";
 import { Role } from "@prisma/client";
 
 interface MembersPageProps {
@@ -55,17 +57,17 @@ export default async function MembersPage({ params }: MembersPageProps) {
   const isAdmin = member.role === Role.ADMIN;
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="container mx-auto px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Team Members</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Team Members</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Manage your organization&apos;s team members and their roles.
           </p>
         </div>
         {isAdmin && (
           <InviteDialog organizationId={organization.id}>
-            <Button>
+            <Button className="w-full sm:w-auto">
               <UserPlus className="mr-2 h-4 w-4" />
               Invite Member
             </Button>
@@ -91,6 +93,13 @@ export default async function MembersPage({ params }: MembersPageProps) {
           />
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <>
+          <JoinRequestsPanel organizationId={organization.id} />
+          <InviteLinksPanel organizationId={organization.id} />
+        </>
+      )}
     </div>
   );
 }

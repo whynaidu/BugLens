@@ -215,41 +215,51 @@ export function InviteDialog({ organizationId, children }: InviteDialogProps) {
             <FormField
               control={form.control}
               name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    disabled={invite.isPending}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a role" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {roleOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            {option.icon}
-                            <div>
-                              <div className="font-medium">{option.label}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {option.description}
+              render={({ field }) => {
+                const selectedRole = roleOptions.find((r) => r.value === field.value);
+                return (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={invite.isPending}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          {selectedRole ? (
+                            <div className="flex items-center gap-2">
+                              {selectedRole.icon}
+                              <span>{selectedRole.label}</span>
+                            </div>
+                          ) : (
+                            <SelectValue placeholder="Select a role" />
+                          )}
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {roleOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value} className="py-3">
+                            <div className="flex items-center gap-2">
+                              {option.icon}
+                              <div>
+                                <div className="font-medium">{option.label}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {option.description}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Choose the level of access this person will have.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Choose the level of access this person will have.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
 
             <DialogFooter>

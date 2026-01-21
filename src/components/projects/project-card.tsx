@@ -11,7 +11,7 @@ import {
   Pencil,
   Trash2,
   FolderKanban,
-  Bug,
+  CheckSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,13 +53,13 @@ interface ProjectCardProps {
     isArchived: boolean;
     updatedAt: Date;
     _count: {
-      flows: number;
-      bugs: number;
+      modules: number;
+      testCases: number;
     };
-    bugStats: {
-      open: number;
-      inProgress: number;
-      resolved: number;
+    testCaseStats: {
+      passed: number;
+      failed: number;
+      pending: number;
       total: number;
     };
   };
@@ -139,7 +139,7 @@ export function ProjectCard({ project, organizationId, onEdit }: ProjectCardProp
                   )}
                 </CardTitle>
                 <CardDescription className="truncate">
-                  {project._count.flows} flows &middot; {project._count.bugs} bugs
+                  {project._count.modules} modules &middot; {project._count.testCases} test cases
                 </CardDescription>
               </div>
             </Link>
@@ -194,24 +194,24 @@ export function ProjectCard({ project, organizationId, onEdit }: ProjectCardProp
               </p>
             )}
 
-            {/* Bug Stats */}
+            {/* Test Case Stats */}
             <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-muted-foreground">
+                  {project.testCaseStats.passed} passed
+                </span>
+              </div>
               <div className="flex items-center gap-1.5">
                 <div className="h-2 w-2 rounded-full bg-red-500" />
                 <span className="text-muted-foreground">
-                  {project.bugStats.open} open
+                  {project.testCaseStats.failed} failed
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="h-2 w-2 rounded-full bg-yellow-500" />
                 <span className="text-muted-foreground">
-                  {project.bugStats.inProgress} in progress
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="h-2 w-2 rounded-full bg-green-500" />
-                <span className="text-muted-foreground">
-                  {project.bugStats.resolved} resolved
+                  {project.testCaseStats.pending} pending
                 </span>
               </div>
             </div>
@@ -223,10 +223,10 @@ export function ProjectCard({ project, organizationId, onEdit }: ProjectCardProp
                   addSuffix: true,
                 })}
               </span>
-              {project.bugStats.total > 0 && (
+              {project.testCaseStats.total > 0 && (
                 <div className="flex items-center gap-1">
-                  <Bug className="h-3 w-3" />
-                  <span>{project.bugStats.total} total</span>
+                  <CheckSquare className="h-3 w-3" />
+                  <span>{project.testCaseStats.total} total</span>
                 </div>
               )}
             </div>
@@ -240,7 +240,7 @@ export function ProjectCard({ project, organizationId, onEdit }: ProjectCardProp
             <AlertDialogTitle>Delete Project</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete &quot;{project.name}&quot;? This will
-              permanently delete all flows, screenshots, bugs, and related data.
+              permanently delete all modules, test cases, screenshots, and related data.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

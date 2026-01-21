@@ -4,30 +4,34 @@ import { TRPCError } from "@trpc/server";
 
 export const auditLogsRouter = createTRPCRouter({
   /**
-   * Get audit logs for a bug with pagination
+   * Get audit logs for a test case with pagination
    */
-  getByBug: protectedProcedure
+  getByTestCase: protectedProcedure
     .input(
       z.object({
-        bugId: z.string(),
+        testCaseId: z.string(),
         limit: z.number().min(1).max(100).default(20),
         cursor: z.string().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { bugId, limit, cursor } = input;
+      const { testCaseId, limit, cursor } = input;
 
-      // First verify the bug exists and user has access
-      const bug = await ctx.db.bug.findUnique({
-        where: { id: bugId },
+      // First verify the test case exists and user has access
+      const testCase = await ctx.db.testCase.findUnique({
+        where: { id: testCaseId },
         include: {
-          project: {
+          module: {
             include: {
-              organization: {
+              project: {
                 include: {
-                  members: {
-                    where: { userId: ctx.session.user.id },
-                    select: { role: true },
+                  organization: {
+                    include: {
+                      members: {
+                        where: { userId: ctx.session.user.id },
+                        select: { role: true },
+                      },
+                    },
                   },
                 },
               },
@@ -36,24 +40,24 @@ export const auditLogsRouter = createTRPCRouter({
         },
       });
 
-      if (!bug) {
+      if (!testCase) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Bug not found",
+          message: "Test case not found",
         });
       }
 
-      const membership = bug.project.organization.members[0];
+      const membership = testCase.module.project.organization.members[0];
       if (!membership) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "You don't have access to this bug",
+          message: "You don't have access to this test case",
         });
       }
 
       // Fetch audit logs with pagination
       const auditLogs = await ctx.db.auditLog.findMany({
-        where: { bugId },
+        where: { testCaseId },
         take: limit + 1, // Get one extra to check if there's more
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: { createdAt: "desc" },
@@ -82,7 +86,7 @@ export const auditLogsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get recent activity across all bugs in a project
+   * Get recent activity across all test cases in a project
    */
   getByProject: protectedProcedure
     .input(
@@ -124,11 +128,13 @@ export const auditLogsRouter = createTRPCRouter({
         });
       }
 
-      // Get recent activity for bugs in this project
+      // Get recent activity for test cases in this project
       const auditLogs = await ctx.db.auditLog.findMany({
         where: {
-          bug: {
-            projectId,
+          testCase: {
+            module: {
+              projectId,
+            },
           },
         },
         take: limit,
@@ -142,7 +148,7 @@ export const auditLogsRouter = createTRPCRouter({
               avatarUrl: true,
             },
           },
-          bug: {
+          testCase: {
             select: {
               id: true,
               title: true,

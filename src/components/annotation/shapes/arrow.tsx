@@ -15,7 +15,7 @@ export function ArrowShape({
   onChange,
   onDoubleClick,
   draggable,
-  hasBug = false,
+  hasTestCase = false,
 }: AnnotationShapeProps) {
   const groupRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -77,8 +77,8 @@ export function ArrowShape({
     onChange({ points: newPoints });
   };
 
-  const strokeColor = hasBug ? "#22c55e" : annotation.stroke;
-  const strokeWidth = hasBug ? 3 : annotation.strokeWidth;
+  const strokeColor = hasTestCase ? "#22c55e" : annotation.stroke;
+  const strokeWidth = hasTestCase ? 3 : annotation.strokeWidth;
 
   return (
     <>
@@ -101,8 +101,8 @@ export function ArrowShape({
           pointerWidth={10}
           hitStrokeWidth={10}
         />
-        {/* Bug indicator badge */}
-        {hasBug && (
+        {/* Test case indicator badge */}
+        {hasTestCase && (
           <Group x={endX + 15} y={endY - 15}>
             <KonvaCircle
               radius={10}
@@ -111,7 +111,7 @@ export function ArrowShape({
               strokeWidth={2}
             />
             <Text
-              text="B"
+              text="T"
               fontSize={10}
               fontStyle="bold"
               fill="#ffffff"

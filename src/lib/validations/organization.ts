@@ -46,6 +46,21 @@ export const getOrgBySlugSchema = z.object({
   slug: z.string().min(1, "Slug is required"),
 });
 
+export const checkSlugSchema = z.object({
+  slug: z
+    .string()
+    .min(1, "Slug is required")
+    .max(50, "Slug must be less than 50 characters")
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      "Slug can only contain lowercase letters, numbers, and hyphens"
+    ),
+});
+
+export const searchOrganizationsSchema = z.object({
+  query: z.string().min(1, "Search query is required").max(100),
+});
+
 export const deleteOrgSchema = z.object({
   organizationId: z.string().min(1, "Organization ID is required"),
 });
@@ -53,4 +68,6 @@ export const deleteOrgSchema = z.object({
 export type CreateOrgInput = z.infer<typeof createOrgSchema>;
 export type UpdateOrgInput = z.infer<typeof updateOrgSchema>;
 export type GetOrgBySlugInput = z.infer<typeof getOrgBySlugSchema>;
+export type CheckSlugInput = z.infer<typeof checkSlugSchema>;
+export type SearchOrganizationsInput = z.infer<typeof searchOrganizationsSchema>;
 export type DeleteOrgInput = z.infer<typeof deleteOrgSchema>;
